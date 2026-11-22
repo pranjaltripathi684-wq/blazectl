@@ -154,3 +154,4 @@ def test_gui_same_colour_for_all(app):
     a.same_var.set(False)
     a.set_swatch(0, "#ff0000")
     assert a.swatches[0].cget("bg") == "#ff0000" and a.swatches[1].cget("bg") == "#123456"
+

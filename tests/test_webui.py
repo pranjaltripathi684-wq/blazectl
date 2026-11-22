@@ -184,3 +184,16 @@ def test_profiles_keep_macros(tmp_path):
            "lighting": {"mode": "static", "colors": ["#ff0000"] * 6, "speed": 2, "brightness": 7, "direction": 0},
            "macros": {"5": {"mode": "hold", "repeat": 1, "events": [["X", "down", 40], ["X", "up", 40]]}}}
     assert store.save("game1", cfg)["slots"]["game1"]["macros"] == cfg["macros"]
+
+
+def test_missing_hidapi_is_a_clear_message_not_a_crash(tmp_path):
+    """Windows without the hidapi package: the GUI shows the install hint instead of an error page."""
+    from blazectl.service import MouseService
+    from blazectl.webui import Api
+
+    def no_hidapi():
+        raise RuntimeError("Talking to the mouse on Windows needs the hidapi package. Install it with:  py -m pip install hidapi")
+
+    api = Api(MouseService(nodes_fn=no_hidapi, settings_path=str(tmp_path / "l.json")))
+    st = api.state()
+    assert st["connected"] is False and "hidapi" in st["error"]

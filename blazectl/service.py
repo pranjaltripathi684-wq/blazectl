@@ -78,7 +78,11 @@ class MouseService:
     # -- plumbing -----------------------------------------------------------
 
     def _node(self):
-        node = ins.find_control_node(self._nodes_fn())
+        try:
+            nodes = self._nodes_fn()
+        except RuntimeError as e:   # e.g. hidapi missing on Windows: show the install hint, don't crash
+            raise ServiceError(str(e)) from e
+        node = ins.find_control_node(nodes)
         if node is None:
             raise ServiceError("Mouse not found. Is it plugged in? Close the EvoFox app if it's running.")
         return node
