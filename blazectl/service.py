@@ -60,7 +60,9 @@ def official_app_running() -> bool:
     if not sys.platform.startswith("win"):
         return False
     try:
-        out = subprocess.run(["tasklist"], capture_output=True, text=True, timeout=5).stdout.lower()
+        # CREATE_NO_WINDOW: no console flash when running inside the windowed app
+        out = subprocess.run(["tasklist"], capture_output=True, text=True, timeout=5,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.lower()
     except Exception:
         return False
     return "evofox" in out or "blaze" in out

@@ -715,6 +715,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("b")
     sp.set_defaults(func=cmd_memdiff)
 
+    sp = sub.add_parser("app", help="open BLAZE Control in its own window (needs: pip install pywebview)")
+    sp.set_defaults(func=lambda a: sys.exit(__import__("blazectl.app", fromlist=["main"]).main([])))
+
     sp = sub.add_parser("macro", help="Instant mice: show, set or clear keyboard macros",
                         description="Examples:\n"
                         "  blazectl macro                       show macros on the mouse\n"

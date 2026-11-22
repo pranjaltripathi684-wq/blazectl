@@ -5,3 +5,4 @@
 *.rules text eol=lf
 # Binary
 *.png   binary
+*.ico   binary

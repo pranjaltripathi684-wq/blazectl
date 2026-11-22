@@ -24,6 +24,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest"]
 windows = ["hidapi>=0.14"]
+app = ["pywebview>=5"]
 
 [project.urls]
 Homepage = "https://github.com/pranjaltripathi684-wq/blazectl"
@@ -31,6 +32,9 @@ Findings = "https://github.com/pranjaltripathi684-wq/blazectl/blob/main/FINDINGS
 
 [project.scripts]
 blazectl = "blazectl.cli:main"
+
+[project.gui-scripts]
+blaze-control = "blazectl.app:main"
 
 [tool.setuptools.packages.find]
 include = ["blazectl*"]

@@ -1,0 +1,74 @@
+name: build-app
+
+# Builds "BLAZE Control" for Windows (installer + portable ZIP).
+# - Publishing a GitHub Release attaches both files to that release automatically.
+# - "Run workflow" on the Actions tab builds them as downloadable artifacts (for testing).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . "pywebview>=6,<7" "hidapi>=0.14" "pyinstaller>=6.10"
+
+      - name: Version must match the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          v=$(python -c "import blazectl; print(blazectl.__version__)")
+          echo "package version: $v, release tag: ${{ github.event.release.tag_name }}"
+          [ "v$v" = "${{ github.event.release.tag_name }}" ] || { echo "::error::Tag must be v$v"; exit 1; }
+
+      - name: Build the app (PyInstaller)
+        shell: bash
+        run: |
+          python packaging/make_version_info.py
+          pyinstaller --noconfirm --clean packaging/blaze_control.spec
+
+      - name: Selftest the built app
+        shell: bash
+        run: |
+          "dist/BLAZE Control/BLAZE Control.exe" --selftest selftest.txt; code=$?
+          cat selftest.txt; exit $code
+
+      - name: Build the installer (Inno Setup)
+        shell: bash
+        run: |
+          choco install innosetup -y --no-progress
+          export BLAZE_VERSION=$(python -c "import blazectl; print(blazectl.__version__)")
+          echo "BLAZE_VERSION=$BLAZE_VERSION" >> $GITHUB_ENV
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" packaging/installer.iss
+
+      - name: Make the portable ZIP
+        shell: pwsh
+        run: Compress-Archive -Path "dist/BLAZE Control" -DestinationPath "dist/BLAZE-Control-Portable-$env:BLAZE_VERSION.zip"
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.exe dist/*.zip --clobber
+
+      - name: Keep as a downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLAZE-Control-${{ env.BLAZE_VERSION }}
+          path: |
+            dist/*.exe
+            dist/*.zip

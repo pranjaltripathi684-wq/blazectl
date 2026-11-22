@@ -13,6 +13,25 @@ every write.
 
 ![blazectl: button mapping](docs/screenshots/buttons.png)
 
+## Download
+
+**Windows app: BLAZE Control.** Get it from the [Releases page](https://github.com/pranjaltripathi684-wq/blazectl/releases/latest):
+
+| File | What it is |
+|---|---|
+| `BLAZE-Control-Setup-<version>.exe` | Installer: Start Menu + desktop shortcut, uninstall from Windows Settings. No admin rights needed. |
+| `BLAZE-Control-Portable-<version>.zip` | Portable: unzip anywhere and run `BLAZE Control.exe`. Nothing is installed. |
+
+No Python needed. The app opens in its own window (it uses the Edge WebView2 runtime built into Windows 10/11).
+
+> **"Windows protected your PC"?** Windows shows this for new apps that aren't code-signed (signing
+> certificates are paid). Click **More info → Run anyway**. The app is built from this repository's source by
+> GitHub Actions ([build-app workflow](.github/workflows/build-app.yml)), so you can check exactly what's in it.
+
+**Prefer the manual setup** (Python, command line, Linux)? See [Windows](#windows) and
+[Linux](#linux-kali-etc) below. `python -m blazectl gui` opens the same interface in a browser app window,
+and `python -m blazectl app` opens it in its own window after `pip install pywebview`.
+
 | Feature | Command | GUI page |
 |---|---|---|
 | RGB lighting: 12 effects, colour per DPI level, speed, brightness, direction | `light` | Lighting |
@@ -180,6 +199,15 @@ pip install -e ".[dev]"     (add "hidapi" on Windows)
 python -m pytest            # GUI tests run when tkinter and a display are available
 ```
 
+Build the Windows app yourself (normally GitHub Actions does this when a release is published):
+
+```
+pip install . pywebview hidapi pyinstaller
+python packaging/make_version_info.py
+pyinstaller --noconfirm --clean packaging/blaze_control.spec     # -> dist/BLAZE Control/BLAZE Control.exe
+set BLAZE_VERSION=0.2.0 && iscc packaging/installer.iss          # -> dist/BLAZE-Control-Setup-0.2.0.exe (needs Inno Setup)
+```
+
 ```
 blazectl/drivers/instant.py   protocol: lighting, memory, DPI table, polling, buttons
 blazectl/drivers/macro.py     macro storage format (events, per-button entries, layout)
@@ -187,6 +215,8 @@ blazectl/service.py           high-level operations (used by both GUIs)
 blazectl/webui.py, web/       local web GUI (server + single-page app)
 blazectl/gui.py               classic tkinter GUI
 blazectl/cli.py               command line
+blazectl/app.py               BLAZE Control desktop app (native window around the web GUI)
+packaging/                    app icon, PyInstaller spec, Inno Setup installer script
 blazectl/backend.py           picks hidraw (Linux) or hidapi (Windows)
 blazectl/hidraw.py, winhid.py transports
 blazectl/capture.py, analysis.py, replay.py, descriptor.py   reverse-engineering toolkit
@@ -194,6 +224,7 @@ udev/, scripts/linux-setup.sh Linux permissions
 tests/                        simulated mouse, real-dump test vectors
 docs/screenshots/             README images (rendered from the simulated mouse)
 .github/workflows/tests.yml   CI: the test suite on Linux and Windows
+.github/workflows/build-app.yml  builds the Windows installer + portable ZIP for each release
 ```
 
 ## License
