@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# Your own memory dumps / backups in the project root (test vectors live in tests/data/)
+/*.json
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Files from the Claude desktop app
+Claude outputs/

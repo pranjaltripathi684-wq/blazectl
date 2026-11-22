@@ -1,0 +1,7 @@
+# Normalise text files to LF in the repository
+* text=auto
+# Files that run on Linux must keep LF even in a Windows checkout
+*.sh    text eol=lf
+*.rules text eol=lf
+# Binary
+*.png   binary

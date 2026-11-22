@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<!--
+  blazectl - open-source configurator for the EvoFox Blaze Ultra mouse
+  Copyright (C) 2026 Pranjal Tripathi
+  SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BLAZE · command center</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2l8.7 5v10L12 22l-8.7-5V7z' fill='%23ff2d3d'/%3E%3C/svg%3E">
+<style>
+:root{
+  --red:#ff2d3d; --red2:#ff7a3d; --cyan:#35d6ff; --ok:#2fd27a; --warn:#ffc24a; --err:#ff5466;
+  --text:#e8ecf3; --muted:#8b93a5; --dim:#5a6274; --line:#252b36; --line2:#323a48;
+  --num:"Bahnschrift","DIN Alternate","Agency FB","Segoe UI",system-ui,sans-serif;
+  --cut:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:radial-gradient(1000px 700px at 45% 45%,#170a0e,transparent 70%),#05070a}
+body{font:13px/1.4 "Segoe UI",Inter,system-ui,sans-serif;color:var(--text);display:flex;align-items:center;justify-content:center}
+button,select,input{font:inherit;color:inherit}
+
+/* ===== stage 1200x720, scaled to window ===== */
+#stage{position:relative;width:1200px;height:720px;flex:none;transform-origin:center;overflow:hidden;
+  display:grid;grid-template-columns:92px 1fr 300px;grid-template-rows:74px 1fr;
+  background:radial-gradient(520px 380px at 38% 58%,rgba(255,45,61,.14),transparent 70%),
+             radial-gradient(500px 300px at 100% 0%,rgba(53,214,255,.06),transparent 70%),
+             linear-gradient(160deg,#0c0f15,#07090d 55%,#05070a)}
+#stage::before{content:"";position:absolute;inset:0;opacity:.06;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='48' viewBox='0 0 28 48'%3E%3Cpath d='M14 0l14 8v16l-14 8-14-8V8zM14 32l14 8v16M0 40l14-8' fill='none' stroke='%23ffffff' stroke-width='.6'/%3E%3C/svg%3E")}
+#stage::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 40% 50%,transparent 55%,rgba(0,0,0,.6))}
+
+/* ===== left rail ===== */
+.rail{grid-row:1/3;position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;padding:16px 0;
+  background:linear-gradient(180deg,rgba(18,21,28,.95),rgba(9,11,15,.95));border-right:1px solid var(--line)}
+.rail::after{content:"";position:absolute;right:-1px;top:90px;width:2px;height:120px;background:linear-gradient(transparent,var(--red),transparent);opacity:.7}
+.logo{width:52px;height:58px;display:grid;place-items:center;margin-bottom:22px;filter:drop-shadow(0 0 12px rgba(255,45,61,.5))}
+.nav{position:relative;width:72px;height:70px;margin:4px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  cursor:pointer;color:var(--dim);border:0;background:none;transition:.2s}
+.nav svg{width:24px;height:24px;transition:.2s}
+.nav span{font:600 9.5px var(--num);letter-spacing:.18em;text-transform:uppercase}
+.nav:hover{color:#c9cfda}
+.nav.on{color:#fff}
+.nav.on svg{color:var(--red);filter:drop-shadow(0 0 8px var(--red))}
+.nav.on::before{content:"";position:absolute;inset:4px 6px;clip-path:var(--cut);background:linear-gradient(135deg,rgba(255,45,61,.22),rgba(255,45,61,.03));border:1px solid rgba(255,45,61,.4)}
+.nav.on::after{content:"";position:absolute;left:-10px;top:18px;bottom:18px;width:3px;background:var(--red);box-shadow:0 0 10px var(--red)}
+.nav i.dot{position:absolute;top:10px;right:12px;width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px var(--warn);display:none}
+.nav.dirty i.dot{display:block}
+.rail .credit{margin-top:8px;text-align:center;font:600 7.5px/1.5 var(--num);letter-spacing:.12em;color:#4a5160}
+.rail .bottom{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--dim);font:600 9px var(--num);letter-spacing:.15em}
+.led{width:9px;height:9px;border-radius:50%;background:var(--err);box-shadow:0 0 10px var(--err)}
+.led.on{background:var(--ok);box-shadow:0 0 10px var(--ok);animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 2px var(--ok)}}
+
+/* ===== header ===== */
+.head{grid-column:2;position:relative;display:flex;align-items:center;padding:0 30px;gap:18px;z-index:1}
+.wm{font:italic 800 28px/1 var(--num);letter-spacing:.14em;color:transparent;-webkit-text-stroke:1.2px #b9c0cd;
+  background:linear-gradient(180deg,#fff,#8d95a6 48%,#2a2f38 52%,#d3d8e2);-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 8px rgba(255,45,61,.3))}
+.crumb{display:flex;flex-direction:column;border-left:1px solid var(--line2);padding-left:18px}
+.crumb b{font:600 17px var(--num);letter-spacing:.22em;text-transform:uppercase}
+.crumb span{color:var(--dim);font-size:11.5px}
+.head .hudl{position:absolute;left:30px;right:0;bottom:0;height:12px}
+.warn{margin-left:auto;padding:6px 12px;border:1px solid rgba(255,194,74,.45);background:rgba(45,32,6,.8);color:#ffd88a;font-size:11.5px;display:none;clip-path:var(--cut)}
+.warn.show{display:block}
+
+/* ===== workspace ===== */
+.work{grid-column:2;position:relative;z-index:1}
+.page{position:absolute;inset:14px 24px 22px 30px;display:none}
+.page.on{display:block;animation:fade .35s ease}
+@keyframes fade{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+.panel{position:absolute;background:linear-gradient(160deg,rgba(26,30,38,.88),rgba(11,13,17,.9));clip-path:var(--cut);padding:18px 20px}
+.panel::before{content:"";position:absolute;inset:0;clip-path:var(--cut);padding:1px;background:linear-gradient(135deg,rgba(255,45,61,.55),rgba(80,90,110,.35) 30%,rgba(80,90,110,.15) 70%,rgba(53,214,255,.35));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.ptitle{font:600 11px var(--num);letter-spacing:.24em;text-transform:uppercase;color:#cfd5e1;display:flex;align-items:center;gap:8px}
+.ptitle::before{content:"";width:8px;height:8px;background:var(--red);clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);box-shadow:0 0 8px var(--red)}
+.ptitle small{margin-left:auto;letter-spacing:.04em;text-transform:none;color:var(--dim);font:400 11px "Segoe UI",system-ui}
+
+/* ===== mouse ===== */
+.stagefloor{position:absolute;border-radius:50%;background:radial-gradient(ellipse,rgba(255,45,61,.35),rgba(255,45,61,.06) 45%,transparent 70%);filter:blur(2px)}
+.stagefloor::after{content:"";position:absolute;inset:18%;border-radius:50%;border:1px solid rgba(255,45,61,.35);box-shadow:0 0 20px rgba(255,45,61,.35)}
+.tilt{position:absolute;transform:perspective(1100px) rotateX(24deg) rotateZ(-10deg);transform-style:preserve-3d;filter:drop-shadow(18px 30px 26px rgba(0,0,0,.8))}
+.tilt svg{width:100%;height:100%}
+.hb{cursor:pointer}
+.hb path{transition:.15s}
+.hb.on path{fill:var(--red);stroke:#fff}
+.glow{transition:opacity .3s}
+.fx-breathing .glow{animation:breathe calc(4.2s - var(--spd)*.6s) ease-in-out infinite}
+.fx-breathing-multi .glow{animation:breathe calc(4.2s - var(--spd)*.6s) ease-in-out infinite, hue 8s linear infinite}
+.fx-rainbow .glow,.fx-spectrum .glow,.fx-fill .glow,.fx-loop .glow,.fx-enraptured .glow,.fx-ripple .glow{animation:hue calc(6s - var(--spd)*.9s) linear infinite}
+.rev .glow{animation-direction:reverse}
+.fx-flicker .glow,.fx-startrek .glow{animation:flick .9s steps(2) infinite, hue 6s linear infinite}
+@keyframes breathe{0%,100%{opacity:.12}50%{opacity:1}}
+@keyframes hue{to{filter:hue-rotate(360deg)}}
+@keyframes flick{50%{opacity:.2}}
+
+/* ===== buttons page ===== */
+.bcards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.bcard{position:relative;display:flex;align-items:center;gap:12px;height:62px;padding:0 14px;cursor:pointer;clip-path:var(--cut);
+  background:linear-gradient(135deg,#1a1e26,#111419);border:0;text-align:left;transition:.15s}
+.bcard::before{content:"";position:absolute;inset:0;clip-path:var(--cut);padding:1px;background:#2c333f;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+.bcard .hx{width:32px;height:36px;flex:none;display:grid;place-items:center;font:700 15px var(--num);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);background:#2a303c}
+.bcard .t{min-width:0;flex:1}
+.bcard .t small{display:block;color:var(--dim);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase}
+.bcard .t b{display:block;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bcard .chg{position:absolute;top:7px;right:10px;font:600 9px var(--num);letter-spacing:.15em;color:#111;background:var(--warn);padding:2px 6px;display:none}
+.bcard.changed .chg{display:block}
+.bcard:hover::before,.bcard.hot::before{background:#4a5465}
+.bcard.sel{background:linear-gradient(135deg,rgba(255,45,61,.25),rgba(40,10,14,.6))}
+.bcard.sel::before{background:linear-gradient(135deg,var(--red),rgba(255,45,61,.2))}
+.bcard.sel .hx{background:linear-gradient(160deg,#ff4a57,#a8101c);box-shadow:0 0 12px rgba(255,45,61,.7)}
+.picker{margin-top:14px}
+.pgroup{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap}
+.pgroup label{width:58px;font:600 10px var(--num);letter-spacing:.2em;color:var(--red)}
+.chip{padding:6px 12px;border:1px solid var(--line2);background:#12151b;cursor:pointer;font-size:12.5px;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);transition:.12s}
+.chip:hover{border-color:#5a6578;background:#1a1f28}
+.chip.cur{background:linear-gradient(90deg,var(--red),#c41828);border-color:transparent;color:#fff;box-shadow:0 0 12px rgba(255,45,61,.5)}
+.chip:disabled{opacity:.3;cursor:not-allowed}
+.ptabs{display:flex;gap:2px;margin-top:8px;border-bottom:1px solid var(--line2)}
+.ptab{position:relative;flex:1;height:30px;border:0;background:transparent;cursor:pointer;font:600 10px var(--num);letter-spacing:.16em;color:var(--dim);transition:.12s}
+.ptab:hover{color:#fff;background:#141820}
+.ptab.on{color:#fff;background:linear-gradient(180deg,transparent,rgba(255,45,61,.14))}
+.ptab.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--red);box-shadow:0 0 8px var(--red)}
+.ptab.has::before{content:"";position:absolute;top:6px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red)}
+.ptab:disabled{opacity:.25;cursor:not-allowed}
+.pchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-content:flex-start;min-height:74px}
+.chip sup{font:600 8px var(--num);color:var(--dim);margin-left:3px}
+.chip.cur sup{color:#ffd9dc}
+.sc{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sc .mod{min-width:56px;text-align:center}
+.sc .mod.on{background:#1d3640;border-color:var(--cyan);color:#fff;box-shadow:0 0 10px rgba(53,214,255,.35)}
+.sc .plus{color:var(--dim);font:600 16px var(--num)}
+.sc select{height:30px;min-width:96px;background:#0c0f14;border:1px solid var(--line2);padding:0 6px}
+.sc select option{background:#12151b}
+.sc .prev{font:700 15px var(--num);letter-spacing:.06em;color:#fff;margin-left:4px}
+.hintline{color:var(--dim);font-size:11.5px;margin-top:10px}
+
+/* ===== performance ===== */
+.gauge text{font-family:var(--num)}
+.lvchips{display:flex;gap:8px;justify-content:center}
+.lvc{position:relative;width:62px;padding:8px 0 7px;text-align:center;cursor:pointer;border:0;background:#12151b;clip-path:polygon(50% 0,100% 18%,100% 82%,50% 100%,0 82%,0 18%);transition:.15s}
+.lvc b{display:block;font:600 14px var(--num)}
+.lvc small{font:600 9px var(--num);letter-spacing:.18em;color:var(--dim)}
+.lvc i{display:block;width:22px;height:4px;margin:4px auto 0;background:var(--c);box-shadow:0 0 8px var(--c)}
+.lvc.sel{background:linear-gradient(180deg,color-mix(in srgb,var(--c) 40%,#1a1d24),#12151b)}
+.lvc.busy{animation:pulse 0.6s ease-in-out infinite}
+.lvc.active b{color:var(--ok)}
+.lvc.active::after{content:"";position:absolute;top:5px;right:13px;width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.ladder{display:flex;align-items:flex-end;gap:14px;height:150px;margin-top:20px;padding:0 6px;border-bottom:1px solid var(--line2)}
+.rung{flex:1;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+.rung i{width:100%;background:linear-gradient(180deg,var(--c),color-mix(in srgb,var(--c) 20%,transparent));box-shadow:0 0 14px color-mix(in srgb,var(--c) 50%,transparent);transition:height .3s;clip-path:polygon(0 6px,50% 0,100% 6px,100% 100%,0 100%)}
+.rung span{font:600 11px var(--num);color:var(--muted);margin-bottom:5px}
+.rung.sel span{color:#fff}
+.meter{display:flex;align-items:flex-end;gap:12px;height:110px;margin-top:16px}
+.mbar{flex:1;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:7px}
+.mbar i{width:100%;background:#262c37;clip-path:polygon(0 8px,100% 0,100% 100%,0 100%);transition:.2s}
+.mbar span{font:600 12px var(--num);color:var(--muted)}
+.mbar:hover i{background:#384050}
+.mbar.on i{background:linear-gradient(180deg,var(--cyan),#0e6f8c);box-shadow:0 0 16px rgba(53,214,255,.55)}
+.mbar.on span{color:#fff}
+.tool{display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid var(--line2);background:#12151b;cursor:pointer;font-size:16px;clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+.tool:hover{border-color:var(--red);color:#fff}
+.colorbtn{position:relative;display:inline-flex;align-items:center;gap:9px;height:34px;padding:0 14px;border:1px solid var(--line2);background:#12151b;cursor:pointer;clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+.colorbtn i{width:16px;height:16px;background:var(--c);box-shadow:0 0 10px var(--c);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.colorbtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+/* ===== lighting ===== */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.tile{position:relative;height:54px;cursor:pointer;border:0;padding:0 0 0 10px;text-align:left;clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);background:#12151b;overflow:hidden}
+.tile .sw{position:absolute;left:0;right:0;bottom:0;height:5px;background:var(--g)}
+.tile b{position:relative;font-weight:600;font-size:12.5px}
+.tile.on{background:linear-gradient(135deg,rgba(255,45,61,.28),#14090b)}
+.tile.on::after{content:"";position:absolute;inset:0;border:1px solid var(--red);clip-path:inherit}
+.tile:hover{background:#1a1f28}
+.t-anim .sw{animation:hue 4s linear infinite}
+.t-pulse .sw{animation:breathe 2.2s ease-in-out infinite}
+.pips{display:flex;gap:5px}
+.pip{width:22px;height:14px;border:0;cursor:pointer;background:#262c37;clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)}
+.pip.on{background:linear-gradient(90deg,var(--red),var(--red2));box-shadow:0 0 8px rgba(255,45,61,.6)}
+.pips.off .pip{opacity:.25;cursor:not-allowed}
+.lrow{display:grid;grid-template-columns:96px 1fr 26px;align-items:center;gap:10px;margin-top:14px}
+.lrow label{color:var(--muted)}
+.lrow output{font:600 14px var(--num);text-align:right}
+.seg{display:inline-flex}
+.seg button{border:1px solid var(--line2);background:#12151b;padding:6px 14px;cursor:pointer;color:var(--muted)}
+.seg button+button{border-left:0}
+.seg button.on{background:linear-gradient(180deg,#5a0f17,#2a070b);color:#fff;box-shadow:inset 0 0 10px rgba(255,45,61,.6)}
+.seg button:disabled{opacity:.35;cursor:not-allowed}
+.hexes{display:flex;gap:14px;margin-top:12px}
+.hexes label{position:relative;text-align:center;cursor:pointer;font:600 10px var(--num);color:var(--dim)}
+.hexes label i{display:block;width:42px;height:46px;margin-bottom:5px;background:var(--c);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);box-shadow:0 0 16px var(--c);transition:.15s}
+.hexes label:hover i{transform:scale(1.08)}
+.hexes input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.chk{display:inline-flex;gap:7px;align-items:center;color:var(--muted);cursor:pointer;font-size:12px}
+.chk input{accent-color:var(--red)}
+
+/* ===== macro ===== */
+.mlist{position:absolute;left:20px;right:14px;top:52px;bottom:66px;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px}
+.mlist::-webkit-scrollbar,.evlist::-webkit-scrollbar{width:6px}.mlist::-webkit-scrollbar-thumb,.evlist::-webkit-scrollbar-thumb{background:#2c333f}
+.mhead{font:600 9.5px var(--num);letter-spacing:.22em;color:var(--dim);margin:6px 0 2px}
+.mitem{position:relative;flex:none;width:100%;text-align:left;border:0;cursor:pointer;padding:8px 10px 8px 14px;background:#12151b;
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);transition:.12s}
+.mitem b{display:block;font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:44px}
+.mitem small{color:var(--dim);font-size:10.5px}
+.mitem:hover{background:#1a1f28}
+.mitem.on{background:linear-gradient(135deg,rgba(255,45,61,.3),#16090c)}
+.mitem.on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);box-shadow:0 0 8px var(--red)}
+.mitem .bnd{position:absolute;right:8px;top:9px;display:flex;gap:3px}
+.mitem .bnd i{font:700 9.5px var(--num);font-style:normal;width:16px;height:18px;display:grid;place-items:center;color:#fff;background:#a8101c;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.mitem.unsaved b{font-style:italic;color:#c9cfda}
+.mfoot{position:absolute;left:20px;right:14px;bottom:16px;display:flex;gap:6px}
+.mbtn{flex:1;height:34px;white-space:nowrap;padding:0 4px;border:1px solid var(--line2);background:#12151b;cursor:pointer;font:600 10.5px var(--num);letter-spacing:.16em;color:var(--muted);
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);transition:.12s}
+.mbtn:hover{color:#fff;border-color:var(--red)}
+.mbtn.pri{background:linear-gradient(90deg,#7a0d16,#3a070c);color:#fff;border-color:rgba(255,45,61,.6)}
+.mbtn.pri.dirty{box-shadow:inset 0 0 12px rgba(255,194,74,.5);border-color:var(--warn)}
+.mbtn:disabled{opacity:.35;cursor:not-allowed}
+.mtop{display:flex;align-items:center;gap:10px;margin-top:12px}
+.mname{flex:1;min-width:0;height:34px;padding:0 12px;border:1px solid var(--line2);background:#0c0f14;font:600 15px var(--num);letter-spacing:.06em;outline:none;
+  clip-path:polygon(8px 0,100% 0,100% 100%,0 100%,0 8px)}
+.mname:focus{border-color:var(--red)}
+.rec{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border:1px solid rgba(255,45,61,.6);background:#1c0a0d;cursor:pointer;
+  font:700 11px var(--num);letter-spacing:.2em;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.rec i{width:11px;height:11px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}
+.rec.on{background:linear-gradient(90deg,#ff2d3d,#a8101c);color:#fff}
+.rec.on i{background:#fff;border-radius:2px;animation:pulse 1s ease-in-out infinite}
+.mstat{display:flex;gap:14px;font:600 11px var(--num);color:var(--muted);letter-spacing:.08em;white-space:nowrap}
+.mstat b{color:#fff;font-size:14px}
+.tl{display:block;width:100%;height:162px;margin-top:10px}
+.tl text{font-family:var(--num)}
+.tl .bar{cursor:pointer}
+.tl .bar:hover rect{filter:brightness(1.3)}
+.recglow{position:absolute;inset:0;pointer-events:none;clip-path:var(--cut);box-shadow:inset 0 0 0 2px var(--red),inset 0 0 40px rgba(255,45,61,.35);display:none;animation:pulse 1.2s infinite}
+.recglow.on{display:block}
+.evtools{display:flex;gap:6px;margin-top:12px;align-items:center}
+.evtools select{flex:1;min-width:0;height:30px;background:#0c0f14;border:1px solid var(--line2);padding:0 6px}
+.evtools select option{background:#12151b}
+.evtools .tool{width:auto;height:30px;padding:0 9px;font:600 10px var(--num);letter-spacing:.12em}
+.evlist{position:absolute;left:20px;right:12px;top:94px;bottom:56px;overflow:auto;padding-right:4px}
+.ev{display:grid;grid-template-columns:22px 18px 1fr 74px 62px;align-items:center;gap:6px;height:32px;padding:0 6px;border-bottom:1px solid #1b2029;cursor:pointer}
+.ev:hover{background:#141820}
+.ev.sel{background:linear-gradient(90deg,rgba(53,214,255,.16),transparent);box-shadow:inset 2px 0 var(--cyan)}
+.ev .ix{font:600 10px var(--num);color:var(--dim)}
+.ev .ar{font-size:11px;text-align:center;cursor:pointer;user-select:none}
+.ev .ar.d{color:var(--red)}.ev .ar.u{color:var(--cyan)}
+.ev b{font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev label{display:flex;align-items:center;gap:3px;color:var(--dim);font-size:10px}
+.ev input{width:52px;height:24px;background:#0c0f14;border:1px solid var(--line2);text-align:right;padding:0 4px;font:600 12px var(--num)}
+.ev input:focus{outline:none;border-color:var(--cyan)}
+.ev .tools{display:flex;gap:2px;opacity:0;transition:.12s}
+.ev:hover .tools,.ev.sel .tools{opacity:1}
+.ev .tools button{width:19px;height:22px;border:0;background:#1d222c;cursor:pointer;font-size:10px;color:var(--muted)}
+.ev .tools button:hover{color:#fff;background:#a8101c}
+.evempty{color:var(--dim);text-align:center;margin-top:40px;line-height:1.7}
+.evfoot{position:absolute;left:20px;right:12px;bottom:14px;display:flex;gap:6px;align-items:center;color:var(--dim);font-size:11px}
+.evfoot input{width:54px;height:28px;background:#0c0f14;border:1px solid var(--line2);text-align:right;padding:0 6px;font:600 12px var(--num)}
+.evfoot .tool{width:auto;height:28px;padding:0 10px;font:600 10px var(--num);letter-spacing:.12em}
+.evfoot .sp{flex:1}
+.pblock{margin-top:10px}
+.pblock .lbl{font:600 9.5px var(--num);letter-spacing:.22em;color:var(--dim);margin-bottom:7px}
+.rep{display:flex;align-items:center;gap:6px;margin-top:9px}
+.rep output{min-width:44px;text-align:center;font:600 20px var(--num)}
+.rep.off{opacity:.3;pointer-events:none}
+.ahex{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.ah{position:relative;min-width:0;height:60px;padding:0;border:0;cursor:pointer;background:#12151b;clip-path:polygon(50% 0,100% 22%,100% 78%,50% 100%,0 78%,0 22%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;transition:.15s}
+.ah b{font:700 17px var(--num)}
+.ah small{font:600 8px var(--num);letter-spacing:.12em;color:var(--dim);text-transform:uppercase;max-width:62px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ah:hover{background:#1d2330}
+.ah.other{background:linear-gradient(180deg,#2a1d0a,#12151b)}
+.ah.other small{color:var(--warn)}
+.ah.on{background:linear-gradient(160deg,#ff4a57,#8d0d18);box-shadow:0 0 16px rgba(255,45,61,.7)}
+.ah.on small{color:#ffd9dc}
+.ah.pred::after{content:"β";position:absolute;top:13px;right:14px;font:600 9px var(--num);color:var(--dim)}
+.memo{margin-top:8px}
+.memo .bar2{height:6px;background:#1d222c;margin-top:5px;overflow:hidden}
+.memo .bar2 i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),#0e6f8c);box-shadow:0 0 8px var(--cyan);transition:width .3s}
+.memo .bar2 i.full{background:linear-gradient(90deg,var(--warn),var(--err))}
+.memo span{font:600 10px var(--num);letter-spacing:.1em;color:var(--muted)}
+.mnote{color:var(--dim);font-size:10.5px;line-height:1.35;margin-top:6px}
+.merr{position:absolute;left:214px;right:0;top:-2px;padding:5px 10px;font-size:11px;color:#ffd88a;background:rgba(45,32,6,.9);border:1px solid rgba(255,194,74,.45);z-index:3;display:none}
+.merr.show{display:block}
+
+/* ===== right control column ===== */
+.side{grid-row:1/3;grid-column:3;position:relative;z-index:2;display:flex;flex-direction:column;padding:18px 18px 18px;gap:14px;
+  background:linear-gradient(180deg,rgba(18,21,28,.96),rgba(9,11,15,.96));border-left:1px solid var(--line)}
+.dev{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0f1217;clip-path:var(--cut)}
+.dev .t{flex:1;min-width:0}
+.dev .t b{display:block;font:600 12px var(--num);letter-spacing:.1em}
+.dev .t span{color:var(--dim);font-size:11px}
+.ib{display:inline-grid;place-items:center;width:30px;height:30px;border:1px solid var(--line2);background:#14181f;cursor:pointer;color:var(--muted)}
+.ib:hover{color:#fff;border-color:var(--red)}
+.ib svg{width:15px;height:15px}
+.sect{font:600 10.5px var(--num);letter-spacing:.24em;color:var(--muted);display:flex;align-items:center;gap:8px}
+.sect::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
+.slots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.slot{position:relative;display:flex;align-items:center;gap:9px;height:54px;padding:0 10px;border:0;cursor:pointer;text-align:left;background:#12151b;clip-path:var(--cut);transition:.15s}
+.slot svg{width:20px;height:20px;color:var(--dim);flex:none}
+.slot b{display:block;font-size:12.5px;font-weight:600}
+.slot small{display:block;font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
+.slot:hover{background:#1a1f28}
+.slot.on{background:linear-gradient(135deg,rgba(255,45,61,.3),#16090c)}
+.slot.on svg{color:var(--red)}
+.slot.on::after{content:"";position:absolute;inset:0;border:1px solid var(--red);clip-path:inherit}
+.changes{flex:1;min-height:0;overflow:auto;background:#0d1015;clip-path:var(--cut);padding:10px 12px}
+.changes .none{color:var(--dim);text-align:center;margin-top:34px;font-size:12px}
+.changes .none svg{display:block;margin:0 auto 8px;width:28px;height:28px;color:#2f3644}
+.ch{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px dashed #1f252f;font-size:12px}
+.ch i{width:6px;height:6px;flex:none;background:var(--warn);transform:translateY(-1px)}
+.ch b{font-weight:600}
+.ch span{color:var(--muted);margin-left:auto;white-space:nowrap}
+.sync{position:relative;height:56px;border:0;cursor:pointer;clip-path:var(--cut);background:#1a1d24;color:var(--muted);font:700 15px var(--num);letter-spacing:.3em;transition:.2s}
+.sync.ready{color:#fff;background:linear-gradient(110deg,#c41828,var(--red) 40%,var(--red2));box-shadow:0 0 24px rgba(255,45,61,.5)}
+.sync.ready::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%);background-size:250% 100%;animation:sheen 2.6s ease-in-out infinite}
+@keyframes sheen{from{background-position:120% 0}to{background-position:-120% 0}}
+.sync:disabled{cursor:not-allowed}
+.sync.busy{color:#fff}
+.sync small{display:block;font:400 10.5px "Segoe UI",system-ui;letter-spacing:.06em;opacity:.8}
+.row2{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
+.tb{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border:1px solid var(--line2);background:#12151b;cursor:pointer;color:var(--muted);font-size:10.5px;letter-spacing:.06em}
+.tb svg{width:16px;height:16px}
+.tb:hover{color:#fff;border-color:#5a6578}
+.discard{background:none;border:0;color:var(--dim);cursor:pointer;font-size:12px;text-decoration:underline;align-self:center}
+.discard:hover{color:#fff}
+
+.toasts{position:absolute;left:92px;right:300px;bottom:18px;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:30;pointer-events:none}
+.toast{padding:8px 16px;background:rgba(10,12,16,.96);border:1px solid #3a404c;font-size:12.5px;box-shadow:0 10px 24px -8px #000;animation:fade .2s;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)}
+.toast.ok{border-color:rgba(47,210,122,.6);color:#bff5d6}.toast.err{border-color:rgba(255,84,102,.7);color:#ffc4cc;max-width:640px;text-align:center}.toast.info{color:#c6ccd8}
+.overlay{position:absolute;left:92px;right:300px;top:74px;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(5,7,10,.82);backdrop-filter:blur(3px);z-index:15}
+.overlay.show{display:flex}
+.overlay .box{text-align:center;padding:28px 36px;background:rgba(12,14,18,.96);clip-path:var(--cut);border:1px solid rgba(255,45,61,.5)}
+.overlay h3{margin:0 0 6px;font:600 16px var(--num);letter-spacing:.24em;color:var(--red)}
+.overlay p{margin:0 0 16px;color:var(--muted);max-width:420px}
+.overlay button{padding:8px 22px;border:1px solid var(--red);background:#2a070b;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- ===== left rail ===== -->
+  <nav class="rail">
+    <div class="logo"><svg viewBox="0 0 48 54" width="44" height="50"><path d="M24 2l20 11.5v27L24 52 4 40.5v-27z" fill="#0d0f14" stroke="#ff2d3d" stroke-width="2.5"/>
+      <path d="M24 13c2 6 9 8 9 17a9 9 0 01-18 0c0-5 2-7 4-9 0 4 2 6 4 6 0-6-2-9 1-14z" fill="#ff2d3d"/></svg></div>
+    <button class="nav on" data-page="buttons"><i class="dot"></i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 2v8M6 10h12"/></svg><span>Buttons</span></button>
+    <button class="nav" data-page="perf"><i class="dot"></i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 17a8 8 0 1116 0"/><path d="M12 17l4-6"/><circle cx="12" cy="17" r="1.6" fill="currentColor"/></svg><span>Perform</span></button>
+    <button class="nav" data-page="light"><i class="dot"></i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0012 3z"/></svg><span>Lighting</span></button>
+    <button class="nav" data-page="macro"><i class="dot"></i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h1M11 10h1M15 10h2M7 14h10"/></svg><span>Macro</span></button>
+    <div class="bottom"><i class="led" id="led"></i><span id="ledtxt">OFFLINE</span>
+      <div class="credit" id="credit" title="blazectl · Copyright © 2026 Pranjal Tripathi · GPL-3.0-or-later">© 2026<br>P. TRIPATHI</div></div>
+  </nav>
+
+  <!-- ===== header ===== -->
+  <header class="head">
+    <div class="wm">BLAZE</div>
+    <div class="crumb"><b id="ptitle">Button mapping</b><span id="psub">Assign a function to each of the 8 buttons</span></div>
+    <div class="warn" id="warn">EvoFox app is running. It can overwrite these settings.</div>
+    <svg class="hudl" viewBox="0 0 808 12" preserveAspectRatio="none"><path d="M0 11 H260 L272 1 H808" fill="none" stroke="#3a4252" stroke-width="1"/><path d="M0 11 H120" stroke="#ff2d3d" stroke-width="2"/></svg>
+  </header>
+
+  <!-- ===== workspace ===== -->
+  <main class="work">
+    <!-- BUTTONS -->
+    <section class="page on" id="page-buttons">
+      <div class="stagefloor" style="left:0;top:330px;width:340px;height:150px"></div>
+      <div class="tilt" id="mouseB" style="left:40px;top:30px;width:250px;height:425px"></div>
+      <div class="panel" style="left:330px;top:0;right:0;bottom:0">
+        <div class="ptitle">Buttons <small>select a button, then pick its function</small></div>
+        <div class="bcards" id="bcards"></div>
+        <div class="picker">
+          <div class="ptitle" style="margin-top:4px">Function <small id="pfor"></small></div>
+          <div id="picker"></div>
+          <div class="hintline" id="phint"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PERFORMANCE -->
+    <section class="page" id="page-perf">
+      <div class="panel" style="left:0;top:0;width:392px;bottom:0">
+        <div class="ptitle">Sensitivity <small>click a level to activate it</small></div>
+        <svg class="gauge" id="gauge" viewBox="0 0 300 256" style="width:330px;height:282px;display:block;margin:14px auto 6px"></svg>
+        <div class="lvchips" id="lvchips"></div>
+        <div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
+          <button class="tool" id="dpiMinus" title="Lower">−</button><button class="tool" id="dpiPlus" title="Higher">+</button>
+          <label class="colorbtn" id="colorbtn" title="Lighting colour for this level"><i></i>Level colour<input type="color" id="lvColor"></label>
+        </div>
+      </div>
+      <div class="panel" style="left:408px;top:0;right:0;height:290px">
+        <div class="ptitle">DPI ladder <small>click a bar to activate that level</small></div>
+        <div class="ladder" id="ladder"></div>
+        <div style="color:var(--dim);font-size:11px;margin-top:10px">Values: 200–2000 in steps of 200, then 2400, then 3200–11200 in steps of 800, then 12800.</div>
+      </div>
+      <div class="panel" style="left:408px;top:306px;right:0;bottom:0">
+        <div class="ptitle">Polling rate <small id="pollinfo"></small></div>
+        <div class="meter" id="meter"></div>
+      </div>
+    </section>
+
+    <!-- LIGHTING -->
+    <section class="page" id="page-light">
+      <div class="stagefloor" style="left:-10px;top:330px;width:270px;height:130px"></div>
+      <div class="tilt" id="mouseL" style="left:30px;top:50px;width:200px;height:340px"></div>
+      <div class="panel" style="left:262px;top:0;right:0;height:236px">
+        <div class="ptitle">Effect <small id="fxname"></small></div>
+        <div class="tiles" id="tiles"></div>
+      </div>
+      <div class="panel" style="left:262px;top:250px;right:0;height:170px">
+        <div class="ptitle">Tuning</div>
+        <div class="lrow"><label>Speed</label><div class="pips" id="speed"></div><output id="speedO"></output></div>
+        <div class="lrow"><label>Brightness</label><div class="pips" id="bright"></div><output id="brightO"></output></div>
+        <div class="lrow"><label>Direction</label><div class="seg" id="dir"><button data-v="0">Normal</button><button data-v="1">Reverse</button></div><span></span></div>
+      </div>
+      <div class="panel" style="left:262px;top:434px;right:0;bottom:0">
+        <div class="ptitle">Level colours <label class="chk" style="margin-left:auto;letter-spacing:0;text-transform:none;font:400 12px 'Segoe UI',system-ui"><input type="checkbox" id="same">same for all</label></div>
+        <div class="hexes" id="hexes"></div>
+        <div style="color:var(--dim);font-size:11px;margin-top:8px" id="lnote"></div>
+      </div>
+    </section>
+
+    <!-- MACRO -->
+    <section class="page" id="page-macro">
+      <div class="merr" id="merr"></div>
+      <div class="panel" style="left:0;top:0;width:200px;bottom:0">
+        <div class="ptitle">Library</div>
+        <div class="mlist" id="mlist"></div>
+        <div class="mfoot"><button class="mbtn" id="mNew">NEW</button><button class="mbtn" id="mDup" title="Duplicate">COPY</button><button class="mbtn" id="mDel" title="Delete from library">DEL</button></div>
+      </div>
+      <div class="panel" style="left:214px;top:0;right:0;height:244px">
+        <div class="recglow" id="recglow"></div>
+        <div class="ptitle">Sequence <small id="tlhint">timeline · click a bar to select</small></div>
+        <div class="mtop">
+          <input class="mname" id="mName" maxlength="40" spellcheck="false" placeholder="Macro name">
+          <button class="mbtn pri" id="mSave" style="flex:none;width:74px;height:34px">SAVE</button>
+          <button class="rec" id="recBtn"><i></i><span>REC</span></button>
+          <div class="mstat"><span><b id="mDur">0</b> ms</span><span><b id="mPairs">0</b>/<span id="mPairsMax"></span> slots</span></div>
+        </div>
+        <svg class="tl" id="tl" viewBox="0 0 500 162" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="panel" style="left:214px;top:258px;width:282px;bottom:0">
+        <div class="ptitle">Events <small id="evcount"></small></div>
+        <div class="evtools">
+          <select id="keySel" title="Key to insert"></select>
+          <button class="tool" id="addTap" title="Insert a press + release">TAP</button>
+          <button class="tool" id="addDown" title="Insert a key-down">▼</button>
+          <button class="tool" id="addUp" title="Insert a key-up">▲</button>
+          <button class="tool" id="setKey" title="Change the selected event's key">SET</button>
+        </div>
+        <div class="evlist" id="evlist"></div>
+        <div class="evfoot">All delays <input type="number" id="allDelay" min="0" max="60000" value="30"><button class="tool" id="applyDelay">SET</button>
+          <span class="sp"></span><button class="tool" id="evClear">CLEAR</button></div>
+      </div>
+      <div class="panel" style="left:510px;top:258px;right:0;bottom:0">
+        <div class="ptitle">Playback</div>
+        <div class="pblock">
+          <div class="seg" id="mMode" style="display:flex"><button data-v="times" style="flex:1">PLAY N×</button><button data-v="hold" style="flex:1">WHILE HELD</button></div>
+          <div class="rep" id="rep"><button class="tool" id="repMinus">−</button><output id="repO">1</output><button class="tool" id="repPlus">+</button><span style="color:var(--dim);font-size:11px">times per press</span></div>
+        </div>
+        <div class="pblock"><div class="lbl">ASSIGN TO BUTTON</div><div class="ahex" id="ahex"></div></div>
+        <div class="memo"><span id="memoTxt"></span><div class="bar2"><i id="memoBar"></i></div></div>
+        <div class="mnote" id="mnote">Assignments are staged. SYNC TO MOUSE writes them.</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== right control column ===== -->
+  <aside class="side">
+    <div class="dev">
+      <i class="led" id="led2"></i>
+      <div class="t"><b id="devname">Blaze Ultra</b><span id="devsub">searching…</span></div>
+      <button class="ib" id="refreshBtn" title="Read settings from the mouse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg></button>
+    </div>
+    <div class="sect">PROFILE</div>
+    <div class="slots" id="slots"></div>
+    <div class="sect">PENDING CHANGES</div>
+    <div class="changes" id="changes"></div>
+    <button class="sync" id="syncBtn"><span id="syncTxt">IN SYNC</span><small id="syncSub">mouse matches the editor</small></button>
+    <button class="discard" id="discardBtn">Discard changes</button>
+    <div class="row2">
+      <button class="tb" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14v6h16v-6M12 3v12m0 0l-4-4m4 4l4-4"/></svg>Import</button>
+      <button class="tb" id="exportBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14v6h16v-6M12 15V3m0 0L8 7m4-4l4 4"/></svg>Export</button>
+      <button class="tb" id="resetBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 102.3-5.7M4 4v5h5"/></svg>Reset</button>
+      <button class="tb" id="backupBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>Backup</button>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+  </aside>
+
+  <div class="toasts" id="toasts"></div>
+  <div class="overlay" id="overlay"><div class="box"><h3>MOUSE NOT FOUND</h3><p id="ovmsg">Plug in the Blaze Ultra and close the EvoFox app.</p><button id="retryBtn">Try again</button></div></div>
+</div>
+
+<script>
+const BOOT = /*__BOOT__*/null;
+const C = BOOT.catalog, TOKEN = BOOT.token, LEVELS = 6;
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const clone = o => JSON.parse(JSON.stringify(o));
+let server = null, draft = null, profiles = null, selLevel = 0, selBtn = 7;
+
+function fit() { const s = Math.min(innerWidth / 1200, innerHeight / 720); $("#stage").style.transform = `scale(${s})`; }
+addEventListener("resize", fit); fit();
+
+const PAGES = {buttons:["Button mapping","Assign a function to each of the 8 buttons"], perf:["Performance","DPI levels, sensitivity and polling rate"],
+               light:["Lighting","Effects and a colour for every DPI level"], macro:["Macros","Record, edit and assign key sequences"]};
+
+// ---------- original mouse illustration ----------
+const HOT = {1:[66,92], 2:[136,92], 3:[100,58], 4:[24,172], 5:[24,206], 6:[100,108], 7:[100,134], 8:[44,66]};
+function mouseSVG(uid, badges) {
+  return `<svg viewBox="0 0 200 340">
+  <defs>
+    <linearGradient id="bw${uid}" x1="0" x2="1"><stop offset="0" stop-color="#cfd4dd"/><stop offset=".45" stop-color="#f4f6fa"/><stop offset="1" stop-color="#b9bfca"/></linearGradient>
+    <linearGradient id="bk${uid}" x1="0" x2="1"><stop offset="0" stop-color="#121418"/><stop offset=".5" stop-color="#2a2e36"/><stop offset="1" stop-color="#121418"/></linearGradient>
+    <linearGradient id="rd${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff4a57"/><stop offset="1" stop-color="#8e0f1a"/></linearGradient>
+    <linearGradient id="rgb${uid}" x1="0" x2="1"><stop offset="0" stop-color="#ff2d3d"/><stop offset=".2" stop-color="#ff9a2d"/><stop offset=".4" stop-color="#ffe14a"/><stop offset=".6" stop-color="#2fd27a"/><stop offset=".8" stop-color="#35a6ff"/><stop offset="1" stop-color="#b44bff"/></linearGradient>
+    <filter id="gb${uid}" x="-30%" y="-200%" width="160%" height="500%"><feGaussianBlur stdDeviation="5"/></filter>
+  </defs>
+  <path d="M100 0 C98 8 102 14 100 24" stroke="#2b2f37" stroke-width="7" fill="none"/>
+  <path d="M100 22 C144 22 170 54 173 114 C177 186 172 252 158 290 C146 322 124 337 100 337 C76 337 54 322 42 290 C28 252 23 186 27 114 C30 54 56 22 100 22Z" fill="url(#bw${uid})"/>
+  <path d="M100 22 C112 22 118 24 122 28 L124 168 C116 176 84 176 76 168 L78 28 C82 24 88 22 100 22Z" fill="url(#bk${uid})"/>
+  <path d="M27 114 C24 160 26 200 32 236 L52 230 C44 196 42 160 44 128Z" fill="#1d2026"/>
+  <path d="M173 114 C176 160 174 200 168 236 L148 230 C156 196 158 160 156 128Z" fill="#1d2026"/>
+  <path d="M76 168 C84 176 116 176 124 168 L150 232 L50 232Z" fill="#23262d"/>
+  <path d="M40 60 L58 52 M44 80 L60 72 M140 52 L160 60 M140 72 L156 80" stroke="#8d95a6" stroke-width="1.2" opacity=".7"/>
+  <path d="M30 96 C32 66 44 44 66 32 L68 80 L40 104Z" fill="url(#rd${uid})"/>
+  <rect x="91" y="38" width="18" height="44" rx="9" fill="#0a0b0e" stroke="#4a505c"/>
+  ${[0,1,2,3,4,5].map(i => `<rect x="93" y="${44+i*6}" width="14" height="2.5" rx="1" fill="#3a3f49"/>`).join("")}
+  <rect x="88" y="98" width="24" height="20" rx="4" fill="url(#rd${uid})"/>
+  <rect x="88" y="124" width="24" height="20" rx="4" fill="url(#rd${uid})"/>
+  <path d="M20 156 L28 154 L30 186 L22 188Z" fill="#33373f" stroke="#5a606c" stroke-width=".8"/>
+  <path d="M20 192 L30 190 L31 222 L22 224Z" fill="#33373f" stroke="#5a606c" stroke-width=".8"/>
+  <g class="glow">
+    <path d="M44 262 Q100 236 156 250" stroke="url(#rgb${uid})" stroke-width="14" fill="none" filter="url(#gb${uid})" class="g1"/>
+    <path d="M44 262 Q100 236 156 250" stroke="url(#rgb${uid})" stroke-width="5" fill="none" stroke-linecap="round" class="g2"/>
+  </g>
+  <g transform="translate(100 296)" opacity=".85"><path d="M0 -14 L12 -7 L12 7 L0 14 L-12 7 L-12 -7Z" fill="none" stroke="#9aa2b2" stroke-width="1.5"/>
+    <path d="M0 -8 c1 3 5 4 5 8 a5 5 0 01-10 0 c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-7z" fill="#ff2d3d"/></g>
+  ${badges ? Object.entries(HOT).map(([n,[x,y]]) => `<g class="hb" data-n="${n}">
+     <path d="M${x} ${y-10} L${x+9} ${y-5} L${x+9} ${y+5} L${x} ${y+10} L${x-9} ${y+5} L${x-9} ${y-5}Z" fill="#0b0d11" stroke="#35d6ff" stroke-width="1.5"/>
+     <text x="${x}" y="${y+4}" fill="#fff" font-size="11" font-weight="700" text-anchor="middle" font-family="Bahnschrift,Segoe UI,sans-serif" pointer-events="none">${n}</text></g>`).join("") : ""}
+  </svg>`;
+}
+
+// ---------- helpers ----------
+async function api(path, body={}) {
+  const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json","X-Blazectl-Token":TOKEN}, body:JSON.stringify(body)});
+  const j = await r.json().catch(() => ({error:"bad response"}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function toast(msg, kind="ok") {
+  const t = document.createElement("div"); t.className = "toast " + kind; t.textContent = (kind==="ok"?"✓  ":kind==="err"?"✕  ":"") + msg;
+  $("#toasts").appendChild(t); while ($("#toasts").children.length > 3) $("#toasts").firstChild.remove();
+  setTimeout(() => t.remove(), kind === "err" ? 8000 : 3500);
+}
+const q4 = h => "#" + [1,3,5].map(i => ((parseInt(h.substr(i,2),16)>>4)*17).toString(16).padStart(2,"0")).join("");
+const modeOf = id => C.modes.find(m => m.id === id) || C.modes[0];
+const fn = f => C.functions[f] || (f || "–");
+const CATS = ["MOUSE", "DPI", "EXTEND", "MEDIA", "SHORTCUT", "MACRO"];
+let pcat = "MOUSE", pcatFor = null, sc = null;
+function catOf(n) {
+  const m = draft.macros[n];
+  if (m) return m.type === "media" ? "MEDIA" : m.type === "shortcut" ? "SHORTCUT" : "MACRO";
+  const g = GROUPS.find(g => g[1].includes(draft.buttons[n]));
+  return g ? g[0] : "MOUSE";
+}
+const GROUPS = [["MOUSE",["left-click","right-click","middle-click","back","forward","double-click"]],
+                ["DPI",["dpi-loop","dpi-up","dpi-down"]], ["EXTEND",["rapid-fire","led-loop","show-desktop"]]];
+const PROF = {office:["Office",'<path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/>'],
+  game1:["Game I",'<path d="M6 9h12a4 4 0 014 5l-1 3a2 2 0 01-3 1l-3-3H9l-3 3a2 2 0 01-3-1l-1-3a4 4 0 014-5zM8 11v4M6 13h4"/>'],
+  game2:["Game II",'<path d="M6 9h12a4 4 0 014 5l-1 3a2 2 0 01-3 1l-3-3H9l-3 3a2 2 0 01-3-1l-1-3a4 4 0 014-5z"/><path d="M15 12l2 2m0-2l-2 2M7 13h3"/>'],
+  media:["Media",'<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>']};
+
+// ---------- state ----------
+const configFromState = st => ({dpi:[...st.dpi], polling:st.polling || 1000, buttons:{...st.buttons}, lighting:clone(st.lighting), macros:clone(st.macros || {})});
+function setDraft(cfg) {
+  draft = clone(cfg);
+  draft.macros = draft.macros || {};
+  while (draft.lighting.colors.length < LEVELS) draft.lighting.colors.push(draft.lighting.colors[0] || "#ff2d3d");
+  $("#same").checked = new Set(draft.lighting.colors).size === 1;
+  renderAll();
+}
+function loadState(st, keepDraft) {
+  server = st;
+  for (const id of ["#led", "#led2"]) $(id).className = "led" + (st.connected ? " on" : "");
+  $("#ledtxt").textContent = st.connected ? "ONLINE" : "OFFLINE";
+  $("#devname").textContent = st.connected ? "Blaze Ultra" : "No mouse";
+  $("#devsub").textContent = st.connected ? `${st.usb_id} · level ${st.active_level+1} · ${st.polling} Hz` : "plug in the mouse";
+  $("#overlay").classList.toggle("show", !st.connected);
+  if (!st.connected) $("#ovmsg").textContent = st.error || "Plug in the mouse.";
+  $("#warn").classList.toggle("show", !!st.official_app);
+  if (st.connected && !keepDraft) selLevel = st.active_level;
+  if (keepDraft && draft) { renderAll(); return; }
+  setDraft(st.connected ? configFromState(st) : {dpi:Array(6).fill(800),polling:1000,buttons:{},lighting:st.lighting});
+}
+function changes() {
+  const out = [];
+  if (!server || !server.connected) return out;
+  Object.keys(C.buttons).forEach(n => {
+    const dm = draft.macros[n], sm = (server.macros || {})[n];
+    if (norm(dm) !== norm(sm)) out.push([dm && !isMacro(dm) ? "buttons" : "macro", `Button ${n}`, dm ? esc(bindingTitle(dm)) : fn(draft.buttons[n])]);
+    else if (draft.buttons[n] !== server.buttons[n]) out.push(["buttons", `Button ${n}`, fn(draft.buttons[n])]); });
+  draft.dpi.forEach((v, i) => { if (v !== server.dpi[i]) out.push(["perf", `Level ${i+1}`, `${server.dpi[i]} → ${v}`]); });
+  if (draft.polling !== server.polling) out.push(["perf", "Polling", `${server.polling} → ${draft.polling} Hz`]);
+  const a = draft.lighting, b = server.lighting;
+  if (a.mode !== b.mode) out.push(["light", "Effect", modeOf(a.mode).label]);
+  if (a.speed !== b.speed) out.push(["light", "Speed", `${b.speed} → ${a.speed}`]);
+  if (a.brightness !== b.brightness) out.push(["light", "Brightness", `${b.brightness} → ${a.brightness}`]);
+  if (a.direction !== b.direction) out.push(["light", "Direction", a.direction ? "Reverse" : "Normal"]);
+  a.colors.forEach((c, i) => { if (c.toLowerCase() !== (b.colors[i]||"").toLowerCase()) out.push(["light", `Colour L${i+1}`, `<i style="display:inline-block;width:10px;height:10px;background:${c};margin-right:4px;vertical-align:-1px"></i>${c.toUpperCase()}`]); });
+  return out;
+}
+function renderChanges() {
+  const list = changes(), box = $("#changes");
+  box.innerHTML = list.length ? list.map(([, k, v]) => `<div class="ch"><i></i><b>${k}</b><span>${v}</span></div>`).join("")
+    : `<div class="none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 6L9 17l-5-5"/></svg>Editor matches the mouse</div>`;
+  const s = $("#syncBtn");
+  s.classList.toggle("ready", list.length > 0);
+  $("#syncTxt").textContent = list.length ? "SYNC TO MOUSE" : "IN SYNC";
+  $("#syncSub").textContent = list.length ? `${list.length} change${list.length>1?"s":""} · Ctrl+S` : "mouse matches the editor";
+  for (const page of ["buttons", "perf", "light", "macro"]) $(`.nav[data-page="${page}"]`).classList.toggle("dirty", list.some(c => c[0] === page));
+}
+
+// ---------- BUTTONS ----------
+function renderButtons() {
+  $("#mouseB").innerHTML = mouseSVG("b", true);
+  $$("#mouseB .hb").forEach(g => { g.classList.toggle("on", +g.dataset.n === selBtn); g.onclick = () => { selBtn = +g.dataset.n; renderButtons(); };
+    g.onmouseenter = () => hot(+g.dataset.n); g.onmouseleave = () => hot(0); });
+  const box = $("#bcards"); box.innerHTML = "";
+  Object.entries(C.buttons).forEach(([n, info]) => {
+    const b = document.createElement("button");
+    const changed = server && server.connected && (draft.buttons[n] !== server.buttons[n] || norm(draft.macros[n]) !== norm((server.macros || {})[n]));
+    b.className = "bcard" + (+n === selBtn ? " sel" : "") + (changed ? " changed" : "");
+    b.dataset.n = n;
+    b.innerHTML = `<div class="hx">${n}</div><div class="t"><small>${info.label}</small><b>${draft.macros[n] ? esc(cardTitle(draft.macros[n])) : fn(draft.buttons[n])}</b></div><span class="chg">EDITED</span>`;
+    b.onclick = () => { selBtn = +n; renderButtons(); };
+    b.onmouseenter = () => hot(+n); b.onmouseleave = () => hot(0);
+    box.appendChild(b);
+  });
+  const choices = C.buttons[selBtn].choices;
+  $("#pfor").textContent = `for button ${selBtn} · ${C.buttons[selBtn].label}`;
+  if (pcatFor !== selBtn) { pcat = catOf(selBtn); pcatFor = selBtn; sc = null; }
+  const special = !!C.macro_buttons[selBtn], cur = catOf(selBtn);
+  let body = "";
+  const grp = GROUPS.find(g => g[0] === pcat);
+  if (grp) body = grp[1].map(f => `<button class="chip ${!draft.macros[selBtn] && draft.buttons[selBtn] === f ? "cur" : ""}" data-f="${f}" ${choices.includes(f) ? "" : "disabled"}>${C.functions[f]}</button>`).join("");
+  else if (pcat === "MEDIA") body = Object.entries(C.media_keys).map(([k, label]) => {
+      const on = draft.macros[selBtn] && draft.macros[selBtn].type === "media" && draft.macros[selBtn].key === k;
+      return `<button class="chip ${on ? "cur" : ""}" data-media="${k}">${label}</button>`; }).join("");
+  else if (pcat === "SHORTCUT") {
+    const dm = draft.macros[selBtn];
+    if (!sc) sc = dm && dm.type === "shortcut" ? {mods: [...dm.mods], key: dm.key} : {mods: ["ctrl"], key: "C"};
+    const isCur = dm && dm.type === "shortcut" && norm(dm) === norm({type: "shortcut", ...sc});
+    body = `<div class="sc">${C.modifiers.map(m => `<button class="chip mod ${sc.mods.includes(m) ? "on" : ""}" data-mod="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}
+      <span class="plus">+</span><select id="scKey">${C.keys.filter(k => !/^[LR](Ctrl|Shift|Alt|Win)$/.test(k)).map(k => `<option ${k === sc.key ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>
+      <button class="chip ${isCur ? "cur" : ""}" id="scSet">${isCur ? "✓ " : ""}Use ${esc(scLabel({type: "shortcut", ...sc}))}</button></div>`;
+  } else if (pcat === "MACRO") {
+    const dm = draft.macros[selBtn], has = dm && isMacro(dm);
+    body = `<button class="chip ${has ? "cur" : ""}" id="toMacro">${has ? "Macro · " + esc(macroLabel(dm)) + " ›" : "Open the macro editor ›"}</button>`;
+  }
+  $("#picker").innerHTML = `<div class="ptabs">${CATS.map(c => `<button class="ptab ${c === pcat ? "on" : ""} ${c === cur ? "has" : ""}" data-c="${c}"
+      ${!special && ["MEDIA", "SHORTCUT", "MACRO"].includes(c) ? "disabled title='This button can only hold plain functions'" : ""}>${c}</button>`).join("")}</div>
+    <div class="pchips">${body}</div>`;
+  $$("#picker .ptab").forEach(t => t.onclick = () => { pcat = t.dataset.c; renderButtons(); });
+  $$("#picker .chip[data-f]").forEach(c => c.onclick = () => { delete draft.macros[selBtn]; draft.buttons[selBtn] = c.dataset.f; renderAll(); });
+  $$("#picker .chip[data-media]").forEach(c => c.onclick = () => {
+    draft.macros[selBtn] = {type: "media", key: c.dataset.media}; draft.buttons[selBtn] = "media"; renderAll(); });
+  $$("#picker .chip[data-mod]").forEach(c => c.onclick = () => {
+    const m = c.dataset.mod; sc.mods = sc.mods.includes(m) ? sc.mods.filter(x => x !== m) : [...sc.mods, m]; renderButtons(); });
+  if ($("#scKey")) $("#scKey").onchange = () => { sc.key = $("#scKey").value; renderButtons(); };
+  if ($("#scSet")) $("#scSet").onclick = () => {
+    draft.macros[selBtn] = {type: "shortcut", mods: C.modifiers.filter(x => sc.mods.includes(x)), key: sc.key};
+    draft.buttons[selBtn] = "shortcut"; renderAll(); };
+  if ($("#toMacro")) $("#toMacro").onclick = () => {
+    const dm = draft.macros[selBtn];
+    if (dm && isMacro(dm) && norm(dm) !== norm(ed.m)) { const nm = libName(dm); if (!edDirty() || !ed.m.events.length || confirm(`Discard unsaved edits to “${ed.name}”?`)) newEditor(nm || uniqueName(`Button ${selBtn} macro`), dm, nm); }
+    goPage("macro");
+  };
+  const factory = C.factory_buttons[selBtn];
+  $("#phint").innerHTML = (selBtn === 8 ? "The fire button only accepts Rapid Fire or DPI Loop (a firmware limit). " : "") +
+    `Factory default: <a href="#" id="factoryOne" style="color:var(--cyan)">${C.functions[factory]}</a>`;
+  $("#factoryOne").onclick = e => { e.preventDefault(); delete draft.macros[selBtn]; draft.buttons[selBtn] = factory; renderAll(); };
+}
+function hot(n) {
+  $$("#mouseB .hb").forEach(g => g.classList.toggle("on", +g.dataset.n === n || +g.dataset.n === selBtn));
+  $$("#bcards .bcard").forEach(b => b.classList.toggle("hot", +b.dataset.n === n));
+}
+
+// ---------- PERFORMANCE ----------
+function gaugeSVG(value, idx, color) {
+  const cx = 150, cy = 140, r = 108, a0 = 135, sweep = 270, N = C.dpi_values.length - 1;
+  const pt = (a, rr) => [cx + rr * Math.cos(a * Math.PI / 180), cy + rr * Math.sin(a * Math.PI / 180)];
+  const arc = (from, to, rr) => { const [x1,y1] = pt(from, rr), [x2,y2] = pt(to, rr); return `M${x1} ${y1} A${rr} ${rr} 0 ${to - from > 180 ? 1 : 0} 1 ${x2} ${y2}`; };
+  const end = a0 + sweep * idx / N;
+  let ticks = "";
+  C.dpi_values.forEach((v, i) => { const a = a0 + sweep * i / N, [x1,y1] = pt(a, r + 14), [x2,y2] = pt(a, r + (i % 4 ? 19 : 24));
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${i <= idx ? color : "#3a4150"}" stroke-width="${i % 4 ? 1.2 : 2}"/>`; });
+  const [nx, ny] = pt(end, r);
+  return `<defs><filter id="gg"><feGaussianBlur stdDeviation="4"/></filter>
+      <linearGradient id="garc" x1="0" x2="1"><stop offset="0" stop-color="${color}" stop-opacity=".25"/><stop offset="1" stop-color="${color}"/></linearGradient></defs>
+    <path d="${arc(a0, a0 + sweep, r)}" stroke="#1e232c" stroke-width="16" fill="none" stroke-linecap="round"/>
+    <path d="${arc(a0, a0 + sweep, r - 22)}" stroke="#171b22" stroke-width="1" fill="none" stroke-dasharray="2 5"/>
+    ${idx > 0 ? `<path d="${arc(a0, end, r)}" stroke="${color}" stroke-width="16" fill="none" stroke-linecap="round" filter="url(#gg)" opacity=".6"/>
+    <path d="${arc(a0, end, r)}" stroke="url(#garc)" stroke-width="10" fill="none" stroke-linecap="round"/>` : ""}
+    ${ticks}
+    <circle cx="${nx}" cy="${ny}" r="9" fill="#fff" stroke="${color}" stroke-width="4"/>
+    <text x="150" y="132" text-anchor="middle" font-size="58" font-weight="700" font-style="italic" fill="#fff">${value}</text>
+    <text x="150" y="160" text-anchor="middle" font-size="13" letter-spacing="6" fill="#8b93a5">DPI · LEVEL ${selLevel+1}</text>
+    <text x="58" y="246" font-size="11" fill="#5a6274">200</text><text x="214" y="246" font-size="11" fill="#5a6274">12800</text>`;
+}
+function renderPerf() {
+  const c = draft.lighting.colors[selLevel], idx = Math.max(0, C.dpi_values.indexOf(draft.dpi[selLevel]));
+  $("#gauge").innerHTML = gaugeSVG(draft.dpi[selLevel], idx, c);
+  const act = server && server.connected ? server.active_level : -1;
+  $("#lvchips").innerHTML = draft.dpi.map((v, i) => `<button class="lvc ${i===selLevel?"sel":""} ${i===act?"active":""}" data-i="${i}" style="--c:${draft.lighting.colors[i]}"><small>L${i+1}</small><b>${v}</b><i></i></button>`).join("");
+  $$("#lvchips .lvc").forEach(b => b.onclick = () => activate(+b.dataset.i));
+  const max = Math.log(12800), min = Math.log(200);
+  $("#ladder").innerHTML = draft.dpi.map((v, i) => { const h = 14 + 86 * (Math.log(v) - min) / (max - min);
+    return `<div class="rung ${i===selLevel?"sel":""}" data-i="${i}" style="--c:${draft.lighting.colors[i]}"><span>${v}</span><i style="height:${h}%"></i></div>`; }).join("");
+  $$("#ladder .rung").forEach(b => b.onclick = () => activate(+b.dataset.i));
+  $("#meter").innerHTML = C.poll_rates.map((r, i) => `<div class="mbar ${draft.polling===r?"on":""}" data-r="${r}"><i style="height:${30 + i*22}%"></i><span>${r} Hz</span></div>`).join("");
+  $$("#meter .mbar").forEach(b => b.onclick = () => { draft.polling = +b.dataset.r; renderPerf(); renderChanges(); });
+  $("#pollinfo").textContent = `reports every ${1000 / draft.polling} ms`;
+  $("#colorbtn").style.setProperty("--c", c); $("#lvColor").value = c;
+}
+let activating = false;
+async function activate(i) {
+  selLevel = i; renderPerf();
+  if (!server || !server.connected || activating) return;
+  activating = true;
+  $$("#lvchips .lvc")[i]?.classList.add("busy");
+  try {
+    const r = await api("/api/active", {level: i + 1});
+    loadState(r.state, true);
+    toast(`Level ${i + 1} active · ${server.dpi[i]} DPI`);
+  } catch (e) { toast(e.message, "err"); }
+  finally { activating = false; renderPerf(); }
+}
+function stepDpi(d) { const k = Math.max(0, Math.min(C.dpi_values.length - 1, C.dpi_values.indexOf(draft.dpi[selLevel]) + d));
+  draft.dpi[selLevel] = C.dpi_values[k]; renderPerf(); renderLighting(); renderChanges(); }
+$("#dpiMinus").onclick = () => stepDpi(-1); $("#dpiPlus").onclick = () => stepDpi(1);
+$("#lvColor").oninput = e => setColor(selLevel, e.target.value);
+$("#gauge").onwheel = e => { e.preventDefault(); stepDpi(e.deltaY < 0 ? 1 : -1); };
+
+// ---------- LIGHTING ----------
+const TILEFX = {static:["var(--c0)",""], breathing:["var(--c0)","t-pulse"], "breathing-multi":["linear-gradient(90deg,#ff2d3d,#ffe14a,#2fd27a,#35a6ff)","t-pulse"],
+  rainbow:["linear-gradient(90deg,#ff2d3d,#ff9a2d,#ffe14a,#2fd27a,#35a6ff,#b44bff)","t-anim"], spectrum:["#ff2d3d","t-anim"],
+  fill:["linear-gradient(90deg,#ff2d3d 50%,#1a1e26 50%)","t-anim"], loop:["linear-gradient(90deg,#35a6ff,#b44bff,#ff2d3d)","t-anim"],
+  enraptured:["linear-gradient(90deg,#b44bff,#ff2d3d,#ffe14a)","t-anim"], flicker:["repeating-linear-gradient(90deg,#fff 0 6px,#111 6px 12px)","t-pulse"],
+  ripple:["radial-gradient(circle,#35d6ff,#0b2d3a)","t-anim"], startrek:["linear-gradient(90deg,#fff,#35a6ff)","t-anim"], off:["#1f242d",""]};
+function renderLighting() {
+  const L = draft.lighting, m = modeOf(L.mode), act = server && server.connected ? server.active_level : 0;
+  const mL = $("#mouseL"); mL.innerHTML = mouseSVG("l", false);
+  mL.className = "tilt fx-" + L.mode + (L.direction ? " rev" : ""); mL.style.setProperty("--spd", m.speed ? L.speed : 2);
+  const stroke = (m.color || L.mode === "off") ? q4(L.colors[act]) : "url(#rgbl)";
+  mL.querySelectorAll(".g1,.g2").forEach(p => p.setAttribute("stroke", stroke));
+  mL.querySelector(".glow").style.opacity = L.mode === "off" ? .05 : (m.brightness ? .3 + .7 * L.brightness / C.brightness_max : 1);
+  const tiles = $("#tiles"); tiles.innerHTML = ""; tiles.style.setProperty("--c0", L.colors[act]);
+  C.modes.forEach(mm => { const [g, cls] = TILEFX[mm.id] || ["#555",""];
+    const t = document.createElement("button"); t.className = `tile ${cls} ${L.mode === mm.id ? "on" : ""}`; t.style.setProperty("--g", g);
+    t.innerHTML = `<b>${mm.label}</b><span class="sw"></span>`; t.onclick = () => { draft.lighting.mode = mm.id; renderLighting(); renderChanges(); };
+    tiles.appendChild(t); });
+  $("#fxname").textContent = m.label + (m.color ? " · uses level colours" : " · built-in colours");
+  const pips = (el, n, val, on, key) => { el.className = "pips" + (on ? "" : " off"); el.innerHTML = "";
+    for (let i = 0; i <= n; i++) { const p = document.createElement("button"); p.className = "pip" + (on && i <= val ? " on" : ""); p.title = String(i);
+      p.onclick = () => { if (!on) return; draft.lighting[key] = i; renderLighting(); renderChanges(); }; el.appendChild(p); } };
+  pips($("#speed"), C.speed_max, L.speed, m.speed, "speed"); pips($("#bright"), C.brightness_max, L.brightness, m.brightness, "brightness");
+  $("#speedO").textContent = m.speed ? L.speed : "–"; $("#brightO").textContent = m.brightness ? L.brightness : "–";
+  $$("#dir button").forEach(b => { b.className = +b.dataset.v === L.direction ? "on" : ""; b.disabled = !m.direction; });
+  $("#hexes").innerHTML = L.colors.map((c, i) => `<label style="--c:${c}" title="Level ${i+1}"><i></i>${draft.dpi[i]}<input type="color" value="${c}" data-i="${i}"></label>`).join("");
+  $$("#hexes input").forEach(inp => inp.oninput = e => setColor(+inp.dataset.i, e.target.value));
+  $("#lnote").textContent = m.color ? "The mouse shows the active level's colour (4-bit per channel)." : `${m.label} ignores these colours. They apply to Static and Breathing.`;
+}
+function setColor(i, hex) {
+  if ($("#same").checked) draft.lighting.colors = draft.lighting.colors.map(() => hex); else draft.lighting.colors[i] = hex;
+  renderPerf(); renderLighting(); renderChanges();
+}
+$$("#dir button").forEach(b => b.onclick = () => { draft.lighting.direction = +b.dataset.v; renderLighting(); renderChanges(); });
+$("#same").onchange = e => { if (e.target.checked) { const c = draft.lighting.colors[selLevel]; draft.lighting.colors = draft.lighting.colors.map(() => c); renderAll(); } };
+
+// ---------- profiles ----------
+function renderProfiles() {
+  $("#slots").innerHTML = C.profile_slots.map(s => { const on = profiles && profiles.active === s, saved = profiles && profiles.slots[s];
+    return `<button class="slot ${on?"on":""}" data-s="${s}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${PROF[s][1]}</svg>
+      <div><b>${PROF[s][0]}</b><small>${on ? "active" : saved ? "saved" : "empty"}</small></div></button>`; }).join("");
+  $$("#slots .slot").forEach(b => b.onclick = () => selectProfile(b.dataset.s));
+}
+async function selectProfile(slot) {
+  if (!profiles || profiles.active === slot) return;
+  if (changes().length && !confirm("Discard unsaved changes and switch profile?")) return;
+  profiles = await api("/api/profiles/save", {slot, active: slot});
+  const cfg = profiles.slots[slot];
+  if (cfg) { setDraft(cfg); toast(`${PROF[slot][0]} loaded. Sync to write it to the mouse`, "info"); }
+  else { setDraft(configFromState(server)); toast(`${PROF[slot][0]} is empty. Syncing saves the current setup into it`, "info"); }
+  renderProfiles();
+}
+
+// ---------- MACRO ----------
+const CODEMAP = {Enter:"Enter",Escape:"Esc",Backspace:"Backspace",Tab:"Tab",Space:"Space",Minus:"-",Equal:"=",BracketLeft:"[",BracketRight:"]",
+  Backslash:"\\",Semicolon:";",Quote:"'",Backquote:"`",Comma:",",Period:".",Slash:"/",CapsLock:"CapsLock",PrintScreen:"PrintScreen",
+  ScrollLock:"ScrollLock",Pause:"Pause",Insert:"Insert",Home:"Home",PageUp:"PageUp",Delete:"Delete",End:"End",PageDown:"PageDown",
+  ArrowRight:"Right",ArrowLeft:"Left",ArrowDown:"Down",ArrowUp:"Up",NumLock:"NumLock",NumpadDivide:"KP/",NumpadMultiply:"KP*",
+  NumpadSubtract:"KP-",NumpadAdd:"KP+",NumpadEnter:"KPEnter",ControlLeft:"LCtrl",ShiftLeft:"LShift",AltLeft:"LAlt",MetaLeft:"LWin",
+  ControlRight:"RCtrl",ShiftRight:"RShift",AltRight:"RAlt",MetaRight:"RWin"};
+function keyName(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  if (/^Numpad\d$/.test(code)) return "KP" + code.slice(6);
+  if (/^F([1-9]|1[0-2])$/.test(code)) return code;
+  return CODEMAP[code] || null;
+}
+let lib = {}, ed = null, selEv = -1, rec = null;
+const blankMacro = () => ({mode:"times", repeat:1, events:[]});
+const norm = m => !m ? "" : m.type === "media" ? `media:${m.key}` : m.type === "shortcut" ? `sc:${C.modifiers.filter(x => m.mods.includes(x)).join("+")}+${m.key}`
+  : JSON.stringify({mode:m.mode, repeat:m.mode === "hold" ? 1 : +m.repeat, events:m.events.map(([k,a,ms]) => [k,a,+ms])});
+const pairsOf = m => m.events.reduce((s, e) => s + 1 + Math.floor(+e[2] / 127), 0);
+const bytesOf = m => 4 + 2 * pairsOf(m);
+const durOf = m => m.events.reduce((s, e) => s + +e[2], 0);
+const libName = m => { if (!isMacro(m)) return null; const n = norm(m); return Object.keys(lib).find(k => norm(lib[k]) === n) || null; };
+const isMacro = m => !!m && (!m.type || m.type === "macro");
+const scLabel = m => [...C.modifiers.filter(x => m.mods.includes(x)).map(x => x[0].toUpperCase() + x.slice(1)), m.key].join("+");
+function bindingTitle(m) {
+  if (!m) return "";
+  if (m.type === "media") return "Media · " + C.media_keys[m.key];
+  if (m.type === "shortcut") return "Shortcut · " + scLabel(m);
+  return "Macro · " + macroLabel(m);
+}
+const cardTitle = m => m.type === "media" ? C.media_keys[m.key] : m.type === "shortcut" ? scLabel(m) : "Macro · " + macroLabel(m);
+const macroLabel = m => { if (!isMacro(m)) return bindingTitle(m); const n = libName(m); if (n) return n;
+  const keys = [...new Set(m.events.map(e => e[0]))].join(" "); return keys.length > 18 ? keys.slice(0, 17) + "…" : keys || "empty"; };
+function newEditor(name, m, orig) { ed = {name, m: clone(m || blankMacro()), orig: orig || null, saved: norm(m || blankMacro())}; selEv = ed.m.events.length ? 0 : -1; }
+function edDirty() { return !ed.orig || norm(ed.m) !== ed.saved || ed.name !== ed.orig; }
+function uniqueName(base) { let i = 1, n = base; while (lib[n]) n = `${base} ${++i}`; return n; }
+
+// Edits to the macro in the editor follow it onto every button it's staged on.
+function editMacro(fnc) {
+  const before = norm(ed.m);
+  fnc(ed.m);
+  if (ed.m.mode === "hold") ed.m.repeat = 1;
+  const after = norm(ed.m);
+  if (before !== after && !rec) followEdit(before);
+  renderMacro(); renderButtons(); renderChanges();
+}
+// Buttons that hold the macro being edited get the new version, but never an empty or oversized one.
+function followEdit(before) {
+  if (!draft || !ed.m.events.length || pairsOf(ed.m) > C.max_pairs || before === norm(blankMacro())) return;
+  for (const [n, dm] of Object.entries(draft.macros || {})) if (norm(dm) === before) {
+    draft.macros[n] = clone(ed.m); draft.buttons[n] = ed.m.mode === "hold" ? "macro-hold" : "macro"; }
+}
+function memUse() {
+  const seen = new Set(); let b = 0;
+  for (const m of Object.values(draft.macros || {})) {
+    if (m.type === "media") continue;
+    const k = norm(m); if (seen.has(k)) continue; seen.add(k);
+    b += m.type === "shortcut" ? 4 + 2 * (m.mods.length + 1) : bytesOf(m);
+  }
+  return b;
+}
+
+function renderMacro() {
+  if (!ed) newEditor(uniqueName("Macro"));
+  $("#merr").classList.toggle("show", !!(server && server.macro_error));
+  $("#merr").textContent = server && server.macro_error ? "Couldn't read the macros on the mouse: " + server.macro_error : "";
+  // library
+  const bound = {};
+  for (const [n, m] of Object.entries(draft.macros || {})) if (isMacro(m)) (bound[norm(m)] = bound[norm(m)] || []).push(n);
+  const item = (key, title, m, cls) => `<button class="mitem ${cls}" data-k="${encodeURIComponent(key)}"><b>${esc(title)}</b>
+     <small>${m.events.length} events · ${durOf(m)} ms · ${m.mode === "hold" ? "hold" : m.repeat + "×"}</small>
+     <span class="bnd">${(bound[norm(m)] || []).map(n => `<i>${n}</i>`).join("")}</span></button>`;
+  let html = "";
+  const names = Object.keys(lib).sort((a, b) => a.localeCompare(b));
+  html += `<div class="mhead">SAVED · ${names.length}</div>` + (names.length ? names.map(k =>
+    item("lib:" + k, k, lib[k], ed.orig === k ? "on" : "")).join("") : `<div class="mnote" style="margin:4px 0 8px">Nothing saved yet.</div>`);
+  const onMouse = Object.entries(draft.macros || {}).filter(([, m]) => isMacro(m) && !libName(m));
+  const shown = new Set();
+  if (onMouse.length) html += `<div class="mhead">ON MOUSE · UNNAMED</div>` + onMouse.filter(([, m]) => !shown.has(norm(m)) && shown.add(norm(m)))
+    .map(([n, m]) => item("btn:" + n, `Button ${n} macro`, m, "unsaved" + (!ed.orig && norm(ed.m) === norm(m) ? " on" : ""))).join("");
+  if (!ed.orig && !onMouse.some(([, m]) => norm(m) === norm(ed.m))) html += `<div class="mhead">EDITING</div>` + item("cur", ed.name || "Untitled", ed.m, "on unsaved");
+  $("#mlist").innerHTML = html;
+  $$("#mlist .mitem").forEach(b => b.onclick = () => openMacro(decodeURIComponent(b.dataset.k)));
+  $("#mSave").classList.toggle("dirty", edDirty() && ed.m.events.length > 0);
+  $("#mDel").disabled = !ed.orig; $("#mDup").disabled = !ed.m.events.length;
+  // header
+  if (document.activeElement !== $("#mName")) $("#mName").value = ed.name;
+  $("#mDur").textContent = durOf(ed.m).toLocaleString();
+  const p = pairsOf(ed.m); $("#mPairs").textContent = p; $("#mPairs").style.color = p > C.max_pairs ? "var(--err)" : "";
+  $("#mPairsMax").textContent = C.max_pairs;
+  $("#recBtn").classList.toggle("on", !!rec); $("#recBtn span").textContent = rec ? "STOP" : "REC"; $("#recglow").classList.toggle("on", !!rec);
+  $("#tlhint").textContent = rec ? "recording · type your sequence, then press STOP" : "timeline · click a bar to select";
+  renderTimeline(); renderEvents(); renderPlayback();
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function renderTimeline() {
+  const evs = ed.m.events, svg = $("#tl"), W = 500, H = 162, L = 58, R = 8, top = 6, axis = 18;
+  if (!evs.length) {
+    svg.innerHTML = `<rect x="0" y="0" width="${W}" height="${H}" fill="#0b0d12"/>
+      ${[...Array(9)].map((_, i) => `<line x1="${L + i * (W - L - R) / 8}" y1="${top}" x2="${L + i * (W - L - R) / 8}" y2="${H - axis}" stroke="#1a1f28"/>`).join("")}
+      <text x="${W / 2}" y="${H / 2 - 4}" text-anchor="middle" fill="#5a6274" font-size="12" letter-spacing="2">PRESS REC AND TYPE</text>
+      <text x="${W / 2}" y="${H / 2 + 14}" text-anchor="middle" fill="#3e4554" font-size="10">or build it with the key buttons below</text>`;
+    return;
+  }
+  const t = []; let acc = 0; evs.forEach(e => { t.push(acc); acc += +e[2]; });
+  const total = Math.max(acc, 1), x = ms => L + (W - L - R) * ms / total;
+  const lanes = [...new Set(evs.map(e => e[0]))], lh = Math.min(26, (H - top - axis - 4) / lanes.length);
+  const steps = [5,10,20,50,100,200,250,500,1000,2000,5000,10000,20000,60000]; const step = steps.find(s => total / s <= 7) || 60000;
+  let g = `<rect x="0" y="0" width="${W}" height="${H}" fill="#0b0d12"/>`;
+  for (let ms = 0; ms <= total + 0.1; ms += step) g += `<line x1="${x(ms)}" y1="${top}" x2="${x(ms)}" y2="${H - axis}" stroke="#1c212b"/>
+    <text x="${x(ms)}" y="${H - 5}" text-anchor="middle" fill="#5a6274" font-size="9">${ms >= 1000 ? (ms / 1000) + "s" : ms}</text>`;
+  g += `<defs><linearGradient id="bg1" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ff5a66"/><stop offset="1" stop-color="#a8101c"/></linearGradient>
+    <filter id="gl"><feGaussianBlur stdDeviation="2.5"/></filter></defs>`;
+  lanes.forEach((k, li) => {
+    const y = top + li * lh;
+    g += `<rect x="0" y="${y}" width="${L - 6}" height="${lh - 3}" fill="${li % 2 ? "#12151b" : "#151922"}"/>
+      <text x="${L - 12}" y="${y + lh / 2 + 2}" text-anchor="end" fill="#c9cfda" font-size="${Math.min(11, lh - 6)}" font-weight="600">${esc(k)}</text>
+      <line x1="${L}" y1="${y + lh / 2 - 1}" x2="${W - R}" y2="${y + lh / 2 - 1}" stroke="#1a1f28" stroke-dasharray="2 3"/>`;
+    let open = null;
+    evs.forEach((e, i) => {
+      if (e[0] !== k) return;
+      if (e[1] === "down") { if (open === null) open = i; }
+      else if (open !== null) { g += bar(open, i); open = null; }
+      else g += `<path d="M${x(t[i])} ${y + 3}v${lh - 9}" stroke="var(--cyan)" stroke-width="2"/>`;
+    });
+    if (open !== null) g += bar(open, null);
+    function bar(i, j) {
+      const x1 = x(t[i]), x2 = j === null ? x(total) : x(t[j]), w = Math.max(3, x2 - x1), s = selEv === i || selEv === j;
+      return `<g class="bar" data-i="${i}"><rect x="${x1}" y="${y + 3}" width="${w}" height="${lh - 9}" fill="url(#bg1)" opacity=".55" filter="url(#gl)"/>
+        <rect x="${x1}" y="${y + 3}" width="${w}" height="${lh - 9}" fill="url(#bg1)" ${s ? 'stroke="#35d6ff" stroke-width="1.5"' : ""} ${j === null ? 'stroke-dasharray="3 2" stroke="#ffc24a"' : ""}/></g>`;
+    }
+  });
+  if (selEv >= 0 && selEv < evs.length) g += `<line x1="${x(t[selEv])}" y1="${top}" x2="${x(t[selEv])}" y2="${H - axis}" stroke="#35d6ff" stroke-width="1" opacity=".8"/>`;
+  const badge = ed.m.mode === "hold" ? "∞ WHILE HELD" : `× ${ed.m.repeat}`;
+  g += `<rect x="${W - 92}" y="${top}" width="84" height="16" fill="rgba(255,45,61,.18)"/><text x="${W - 50}" y="${top + 11.5}" text-anchor="middle" fill="#ff8a93" font-size="9.5" font-weight="700" letter-spacing="1.5">${badge}</text>`;
+  svg.innerHTML = g;
+  svg.querySelectorAll(".bar").forEach(b => b.onclick = () => { selEv = +b.dataset.i; renderMacro(); });
+}
+
+function renderEvents() {
+  const evs = ed.m.events;
+  $("#evcount").textContent = evs.length ? `${evs.length} events` : "";
+  $("#evlist").innerHTML = evs.length ? evs.map((e, i) => `<div class="ev ${i === selEv ? "sel" : ""}" data-i="${i}">
+      <span class="ix">${String(i + 1).padStart(2, "0")}</span><span class="ar ${e[1] === "down" ? "d" : "u"}" title="Toggle down/up">${e[1] === "down" ? "▼" : "▲"}</span>
+      <b>${esc(e[0])}</b><label><input type="number" min="0" max="60000" value="${e[2]}">ms</label>
+      <span class="tools"><button data-a="up" title="Move up">↑</button><button data-a="dn" title="Move down">↓</button><button data-a="rm" title="Delete">✕</button></span></div>`).join("")
+    : `<div class="evempty">No events yet.<br>Pick a key and press TAP,<br>or record with REC.</div>`;
+  $$("#evlist .ev").forEach(row => {
+    const i = +row.dataset.i;
+    row.onclick = ev => { if (ev.target.closest("input,button,.ar")) return; selEv = i; renderMacro(); };
+    row.querySelector(".ar").onclick = () => editMacro(m => { m.events[i][1] = m.events[i][1] === "down" ? "up" : "down"; });
+    const inp = row.querySelector("input");
+    inp.onfocus = () => { if (selEv !== i) { selEv = i; renderTimeline(); $$("#evlist .ev").forEach(r => r.classList.toggle("sel", +r.dataset.i === i)); } };
+    inp.onchange = () => { const v = Math.max(0, Math.min(60000, Math.round(+inp.value || 0))); editMacro(m => { m.events[i][2] = v; }); };
+    row.querySelectorAll(".tools button").forEach(b => b.onclick = () => editMacro(m => {
+      const a = b.dataset.a, j = a === "up" ? i - 1 : i + 1;
+      if (a === "rm") { m.events.splice(i, 1); selEv = Math.min(i, m.events.length - 1); }
+      else if (j >= 0 && j < m.events.length) { [m.events[i], m.events[j]] = [m.events[j], m.events[i]]; selEv = j; }
+    }));
+  });
+  const s = $("#evlist .ev.sel"); if (s) s.scrollIntoView({block: "nearest"});
+}
+
+function renderPlayback() {
+  $$("#mMode button").forEach(b => b.classList.toggle("on", b.dataset.v === ed.m.mode));
+  $("#rep").classList.toggle("off", ed.m.mode === "hold"); $("#repO").textContent = ed.m.mode === "hold" ? "∞" : ed.m.repeat;
+  const mine = norm(ed.m);
+  $("#ahex").innerHTML = Object.entries(C.macro_buttons).map(([n, st]) => {
+    const dm = (draft.macros || {})[n], on = dm && norm(dm) === mine && ed.m.events.length, other = dm && !on;
+    const sub = on ? "assigned" : other ? (isMacro(dm) ? libName(dm) || "other macro" : cardTitle(dm)) : fn(draft.buttons[n]);
+    return `<button class="ah ${on ? "on" : ""} ${other ? "other" : ""} ${st !== "confirmed" ? "pred" : ""}" data-n="${n}"
+      title="${esc(C.buttons[n].label)}${st !== "confirmed" ? " · slot predicted from the pattern, not yet seen in an app dump" : ""}"><b>${n}</b><small>${esc(sub)}</small></button>`; }).join("");
+  $$("#ahex .ah").forEach(b => b.onclick = () => toggleAssign(b.dataset.n));
+  const used = memUse(), pct = Math.min(100, used * 100 / C.macro_bytes);
+  $("#memoTxt").textContent = `MEMORY · ${used} / ${C.macro_bytes} B`;
+  $("#memoBar").style.width = pct + "%"; $("#memoBar").classList.toggle("full", used > C.macro_bytes);
+  $("#mnote").innerHTML = used > C.macro_bytes ? `<span style="color:var(--err)">Too much macro data for the mouse. Shorten or unassign a macro.</span>`
+    : "Staged until <b style='color:#cfd5e1'>SYNC TO MOUSE</b>. β = slot predicted from the pattern.";
+}
+
+function toggleAssign(n) {
+  const dm = (draft.macros || {})[n];
+  if (dm && norm(dm) === norm(ed.m) && ed.m.events.length) {         // unassign
+    delete draft.macros[n];
+    const sv = server && server.buttons[n];
+    draft.buttons[n] = sv && !String(sv).startsWith("macro") ? sv : C.factory_buttons[n];
+    toast(`Button ${n} back to ${fn(draft.buttons[n])}. Sync to write it`, "info");
+  } else {
+    if (!ed.m.events.length) return toast("Add some events first", "err");
+    if (pairsOf(ed.m) > C.max_pairs) return toast(`Too long: ${pairsOf(ed.m)} slots, the mouse holds ${C.max_pairs} per macro`, "err");
+    const downs = {}; for (const [k, a] of ed.m.events) downs[k] = (downs[k] || 0) + (a === "down" ? 1 : -1);
+    const stuck = Object.keys(downs).filter(k => downs[k] > 0);
+    if (stuck.length && !confirm(`${stuck.join(", ")} is pressed but never released, so it would stay held after the macro. Assign anyway?`)) return;
+    draft.macros = draft.macros || {};
+    draft.macros[n] = clone(ed.m); draft.buttons[n] = ed.m.mode === "hold" ? "macro-hold" : "macro";
+    toast(`“${ed.name || "Macro"}” staged on button ${n}. Sync to write it`, "info");
+  }
+  renderMacro(); renderButtons(); renderChanges();
+}
+
+function openMacro(key) {
+  if (rec) stopRec();
+  if (edDirty() && ed.m.events.length && key !== "cur" && !confirm(`Discard unsaved edits to “${ed.name}”?`)) return;
+  if (key.startsWith("lib:")) { const n = key.slice(4); newEditor(n, lib[n], n); }
+  else if (key.startsWith("btn:")) { const n = key.slice(4); newEditor(uniqueName(`Button ${n} macro`), draft.macros[n]); ed.saved = ""; }
+  renderMacro();
+}
+async function saveMacro() {
+  const name = $("#mName").value.trim();
+  if (!name) return toast("Give the macro a name", "err");
+  if (!ed.m.events.length) return toast("Nothing to save yet", "err");
+  if (name !== ed.orig && lib[name] && !confirm(`Replace the saved macro “${name}”?`)) return;
+  try {
+    lib = (await api("/api/macros/library/save", {name, macro: ed.m, old_name: ed.orig})).library;
+    ed.name = name; ed.orig = name; ed.saved = norm(ed.m); toast(`Saved “${name}” to the library`);
+  } catch (e) { toast(e.message, "err"); }
+  renderMacro(); renderChanges();
+}
+
+// recording: keyboard events become down/up pairs; the gap to the next event is the delay
+function startRec() {
+  if (ed.m.events.length && !confirm("Recording replaces the current events. Continue?")) return;
+  rec = {last: null, before: norm(ed.m), prev: clone(ed.m.events)}; ed.m.events = []; selEv = -1;
+  document.activeElement && document.activeElement.blur();
+  renderMacro();
+}
+function stopRec() {
+  const r = rec; rec = null;
+  if (ed.m.events.length) {
+    ed.m.events[ed.m.events.length - 1][2] = 20;
+    followEdit(r.before);
+    toast(`Recorded ${ed.m.events.length} events`);
+  } else {
+    ed.m.events = r.prev;                 // nothing typed: keep what was there
+    toast("Nothing recorded", "info");
+  }
+  renderMacro(); renderButtons(); renderChanges();
+}
+function recKey(e, down) {
+  if (!rec) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (e.repeat) return;
+  const k = keyName(e.code);
+  if (!k) return toast(`${e.code || e.key} can't be stored in a macro`, "err");
+  const now = performance.now(), m = ed.m;
+  if (m.events.length) m.events[m.events.length - 1][2] = Math.min(60000, Math.round(now - rec.last));
+  m.events.push([k, down ? "down" : "up", 20]); rec.last = now; selEv = m.events.length - 1;
+  if (pairsOf(m) > C.max_pairs) { toast("Macro is full (the mouse stores up to 127 slots)", "err"); m.events.pop(); stopRec(); return; }
+  renderMacro();
+}
+document.addEventListener("keydown", e => recKey(e, true), true);
+document.addEventListener("keyup", e => recKey(e, false), true);
+addEventListener("blur", () => { if (rec) stopRec(); });
+
+function insertEvents(list) {
+  editMacro(m => { const at = selEv >= 0 ? selEv + 1 : m.events.length; m.events.splice(at, 0, ...list); selEv = at + list.length - 1; });
+}
+$("#keySel").innerHTML = C.keys.map(k => `<option>${esc(k)}</option>`).join("");
+$("#addTap").onclick = () => { const k = $("#keySel").value, d = Math.max(0, +$("#allDelay").value || 30); insertEvents([[k, "down", d], [k, "up", d]]); };
+$("#addDown").onclick = () => insertEvents([[$("#keySel").value, "down", Math.max(0, +$("#allDelay").value || 30)]]);
+$("#addUp").onclick = () => insertEvents([[$("#keySel").value, "up", Math.max(0, +$("#allDelay").value || 30)]]);
+$("#setKey").onclick = () => { if (selEv < 0) return toast("Select an event first", "err"); editMacro(m => { m.events[selEv][0] = $("#keySel").value; }); };
+$("#applyDelay").onclick = () => { const v = Math.max(0, Math.min(60000, Math.round(+$("#allDelay").value || 0))); editMacro(m => m.events.forEach(e => e[2] = v)); toast(`Every delay set to ${v} ms`, "info"); };
+$("#evClear").onclick = () => { if (ed.m.events.length && confirm("Remove all events?")) { selEv = -1; editMacro(m => { m.events = []; }); } };
+$("#recBtn").onclick = () => rec ? stopRec() : startRec();
+$$("#mMode button").forEach(b => b.onclick = () => editMacro(m => { m.mode = b.dataset.v; }));
+$("#repMinus").onclick = () => editMacro(m => { m.repeat = Math.max(1, m.repeat - 1); });
+$("#repPlus").onclick = () => editMacro(m => { m.repeat = Math.min(255, m.repeat + 1); });
+$("#mName").oninput = () => { ed.name = $("#mName").value; };
+$("#mName").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); saveMacro(); } };
+$("#mNew").onclick = () => { if (rec) stopRec(); if (edDirty() && ed.m.events.length && !confirm(`Discard unsaved edits to “${ed.name}”?`)) return;
+  newEditor(uniqueName("Macro")); renderMacro(); $("#mName").select(); };
+$("#mDup").onclick = () => { newEditor(uniqueName(ed.name + " copy"), ed.m); renderMacro(); toast("Copy created. Save it to keep it", "info"); };
+$("#mDel").onclick = async () => {
+  if (!ed.orig || !confirm(`Delete “${ed.orig}” from the library? Buttons that use it keep it until you change them.`)) return;
+  try { lib = (await api("/api/macros/library/delete", {name: ed.orig})).library; toast(`Deleted “${ed.orig}”`, "info"); ed.orig = null; }
+  catch (e) { toast(e.message, "err"); }
+  renderMacro(); renderButtons(); renderChanges();
+};
+$("#mSave").onclick = saveMacro;
+
+// ---------- actions ----------
+function renderAll() { renderButtons(); renderPerf(); renderLighting(); renderMacro(); renderProfiles(); renderChanges(); }
+async function refresh(quiet) {
+  try { loadState(await api("/api/state")); if (!quiet && server.connected) toast("Settings read from the mouse", "info"); }
+  catch (e) { toast(e.message, "err"); }
+}
+async function sync() {
+  if (!server || !server.connected) return toast("Mouse not connected", "err");
+  const list = changes(); if (!list.length) return;
+  const steps = [], bind = {}, unbind = {};
+  for (const n of Object.keys(C.buttons)) {
+    const dm = draft.macros[n], sm = (server.macros || {})[n];
+    if (norm(dm) === norm(sm)) continue;
+    if (dm) bind[n] = dm; else unbind[n] = draft.buttons[n];
+  }
+  for (const [n, m] of Object.entries(bind)) {
+    if (!isMacro(m)) continue;
+    if (!m.events.length) return toast(`Button ${n}'s macro is empty. Add events or pick another function for it`, "err");
+    if (pairsOf(m) > C.max_pairs) return toast(`Button ${n}'s macro is too long (${pairsOf(m)}/${C.max_pairs} slots)`, "err");
+  }
+  if (memUse() > C.macro_bytes) return toast("Too much macro data for the mouse. Shorten or unassign a macro first", "err");
+  if (Object.keys(bind).length || Object.keys(unbind).length) steps.push(["/api/macros", {bind, unbind}]);
+  if (list.some(c => c[0] === "buttons")) steps.push(["/api/buttons", {buttons: draft.buttons}]);
+  if (draft.dpi.some((v,i) => v !== server.dpi[i])) steps.push(["/api/dpi", {dpi: draft.dpi}]);
+  if (draft.polling !== server.polling) steps.push(["/api/polling", {rate: draft.polling}]);
+  if (list.some(c => c[0] === "light")) steps.push(["/api/lighting", draft.lighting]);
+  const s = $("#syncBtn"); s.disabled = true; s.classList.add("busy"); $("#syncTxt").textContent = "SYNCING…";
+  const keep = clone(draft);
+  try {
+    let st = null;
+    for (const [i, [path, body]] of steps.entries()) { $("#syncSub").textContent = `step ${i+1} of ${steps.length}`; const r = await api(path, body); toast(r.message); st = r.state; }
+    if (st) loadState(st);
+    profiles = await api("/api/profiles/save", {slot: profiles.active, config: draft}); renderProfiles();
+  } catch (e) { toast(e.message, "err"); await refresh(true); setDraft(keep); }
+  finally { s.disabled = false; s.classList.remove("busy"); renderChanges(); }
+}
+$("#syncBtn").onclick = sync;
+$("#discardBtn").onclick = () => { setDraft(configFromState(server)); toast("Changes discarded", "info"); };
+$("#refreshBtn").onclick = () => refresh(false);
+$("#retryBtn").onclick = () => refresh(false);
+$("#resetBtn").onclick = () => { if (!confirm("Reset all 8 buttons to their factory functions? (Sync afterwards to write it.)")) return;
+  draft.buttons = {...C.factory_buttons}; renderAll(); toast("Buttons reset in the editor. Sync to write them", "info"); };
+$("#exportBtn").onclick = () => { const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({blazectl_profile: 1, ...draft}, null, 2)], {type: "application/json"}));
+  a.download = `blaze-${profiles ? profiles.active : "profile"}.json`; a.click(); toast("Profile exported to Downloads"); };
+$("#importBtn").onclick = () => $("#importFile").click();
+$("#importFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (!Array.isArray(j.dpi) || j.dpi.length !== 6 || !j.dpi.every(v => C.dpi_values.includes(+v))) throw new Error("DPI values not supported");
+    if (!C.poll_rates.includes(+j.polling)) throw new Error("bad polling rate");
+    if (!j.lighting || !C.modes.some(m => m.id === j.lighting.mode)) throw new Error("bad lighting");
+    const jm = j.macros || {};
+    const okBinding = m => !!m && (m.type === "media" ? !!C.media_keys[m.key]
+      : m.type === "shortcut" ? Array.isArray(m.mods) && m.mods.every(x => C.modifiers.includes(x)) && C.keys.includes(m.key)
+      : Array.isArray(m.events) && m.events.length > 0 && m.events.every(e => C.keys.includes(e[0])));
+    for (const [n, m] of Object.entries(jm)) if (!C.macro_buttons[n] || !okBinding(m)) throw new Error(`button ${n}: macro, media key or shortcut is invalid`);
+    for (const [n, f2] of Object.entries(j.buttons || {})) if (!C.buttons[n] || !(C.buttons[n].choices.includes(f2) || (["macro","macro-hold","media","shortcut"].includes(f2) && jm[n]))) throw new Error(`button ${n}: ${f2} not allowed`);
+    const macros = {...draft.macros}; for (const n of Object.keys(j.buttons || {})) delete macros[n];
+    setDraft({dpi: j.dpi.map(Number), polling: +j.polling, buttons: {...draft.buttons, ...j.buttons}, lighting: j.lighting, macros: {...macros, ...jm}});
+    toast(`Imported ${f.name}. Sync to write it`, "info");
+  } catch (err) { toast("Import failed: " + err.message, "err"); }
+};
+$("#backupBtn").onclick = async () => {
+  try { const r = await api("/api/backup"); const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(r.backup, null, 2)], {type: "application/json"}));
+    a.download = "blaze-backup-" + new Date().toISOString().slice(0,19).replace(/[:T]/g,"-") + ".json"; a.click(); toast("Memory backup saved to Downloads");
+  } catch (e) { toast(e.message, "err"); }
+};
+function goPage(page) {
+  if (rec && page !== "macro") stopRec();
+  $$(".nav").forEach(x => x.classList.toggle("on", x.dataset.page === page));
+  $$(".page").forEach(p => p.classList.toggle("on", p.id === "page-" + page));
+  [$("#ptitle").textContent, $("#psub").textContent] = PAGES[page];
+  if (page === "macro") renderMacro();
+}
+$$(".nav[data-page]").forEach(n => n.onclick = () => goPage(n.dataset.page));
+addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); sync(); } });
+
+(async () => {
+  try { profiles = await api("/api/profiles"); } catch { profiles = {active: "office", slots: {}}; }
+  try { lib = (await api("/api/macros/library")).library; } catch { lib = {}; }
+  $("#credit").innerHTML = `v${esc(C.version)}<br>© 2026<br>P. TRIPATHI`;
+  await refresh(true);
+})();
+</script>
+</body>
+</html>

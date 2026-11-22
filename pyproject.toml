@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blazectl"
+version = "0.2.0"
+description = "Open-source Windows/Linux configurator for the EvoFox Blaze Ultra gaming mouse, built by reverse-engineering its USB protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Pranjal Tripathi" }]
+keywords = ["evofox", "gaming mouse", "hid", "reverse engineering", "rgb", "macro", "linux", "windows"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Topic :: System :: Hardware :: Hardware Drivers",
+  "Environment :: Web Environment",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+windows = ["hidapi>=0.14"]
+
+[project.urls]
+Homepage = "https://github.com/pranjaltripathi684-wq/blazectl"
+Findings = "https://github.com/pranjaltripathi684-wq/blazectl/blob/main/FINDINGS.md"
+
+[project.scripts]
+blazectl = "blazectl.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["blazectl*"]
+
+[tool.setuptools.package-data]
+blazectl = ["web/*.html"]

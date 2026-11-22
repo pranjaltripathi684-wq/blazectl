@@ -1,0 +1,7 @@
+# blazectl - open-source configurator for the EvoFox Blaze Ultra mouse
+# Copyright (C) 2026 Pranjal Tripathi
+# SPDX-License-Identifier: GPL-3.0-or-later
+# EvoFox Blaze Ultra (Instant Microelectronics 30fa:1440)
+# Lets the logged-in desktop user configure the mouse through /dev/hidraw*
+# without running blazectl as root. Installed by scripts/linux-setup.sh.
+KERNEL=="hidraw*", ATTRS{idVendor}=="30fa", ATTRS{idProduct}=="1440", TAG+="uaccess"
