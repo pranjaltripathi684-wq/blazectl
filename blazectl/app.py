@@ -69,6 +69,30 @@ class SingleInstance:
                 self.ok = False
 
 
+def unblock_bundle(base: str | None = None, remove=os.remove) -> int:
+    """Remove Windows' "downloaded from the internet" mark from the app's own DLLs.
+
+    Files extracted from a downloaded ZIP carry a Zone.Identifier stream; .NET Framework then
+    refuses to load pythonnet's Python.Runtime.dll, so the window can't open ("Failed to resolve
+    Python.Runtime.Loader.Initialize"). This is what PowerShell's Unblock-File does, limited to
+    the files inside this app's own folder. Returns how many marks were removed.
+    """
+    if base is None:
+        if not (sys.platform.startswith("win") and getattr(sys, "frozen", False)):
+            return 0
+        base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    removed = 0
+    for root, _, files in os.walk(base):
+        for name in files:
+            if name.lower().endswith((".dll", ".pyd", ".exe")):
+                try:
+                    remove(os.path.join(root, name) + ":Zone.Identifier")
+                    removed += 1
+                except OSError:
+                    pass        # no mark (the normal case), or a read-only install folder
+    return removed
+
+
 def _start_server():
     from .webui import make_server
     server, token = make_server()
@@ -134,6 +158,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     _log.info("%s %s started at %s", APP_NAME, __version__, url)
     try:
+        n = unblock_bundle()
+        if n:
+            _log.info("removed the downloaded-file mark from %d bundled files", n)
+    except Exception:
+        _log.exception("unblock failed (continuing)")
+    try:
         import webview
     except ImportError:
         _log.warning("pywebview not installed; opening a browser app window instead")
@@ -150,8 +180,15 @@ def main(argv: list[str] | None = None) -> int:
         webview.start()
     except Exception as e:
         _log.exception("window failed")
-        _message(f"{APP_NAME} couldn't open its window ({e}).\n\nOn Windows this needs the Microsoft Edge "
-                 "WebView2 Runtime, which is built into Windows 11 and most Windows 10 PCs.")
+        text = str(e)
+        if "Python.Runtime" in text or "pythonnet" in text or "clr" in text.lower():
+            hint = ("Windows blocked one of the app's files because it came from a downloaded ZIP.\n\n"
+                    "Fix: use the installer (BLAZE-Control-Setup.exe), or right-click the ZIP > Properties > "
+                    "tick 'Unblock' > OK, then extract it again.")
+        else:
+            hint = ("The window needs the Microsoft Edge WebView2 Runtime, which is built into Windows 11 and "
+                    "most Windows 10 PCs. You can get it from microsoft.com/edge/webview2.")
+        _message(f"{APP_NAME} couldn't open its window.\n\n{hint}\n\nDetails: {text}")
         return 1
     finally:
         server.shutdown()

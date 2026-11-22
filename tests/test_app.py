@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Pranjal Tripathi
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The desktop app wrapper (BLAZE Control): selftest, version, single instance."""
+import os
 import sys
 
 import pytest
@@ -34,3 +35,20 @@ def test_only_one_copy_may_run():
     first = app.SingleInstance()
     second = app.SingleInstance()
     assert first.ok and not second.ok
+
+
+def test_unblock_targets_only_our_binaries_and_ignores_missing_marks(tmp_path):
+    (tmp_path / "pythonnet" / "runtime").mkdir(parents=True)
+    for f in ("pythonnet/runtime/Python.Runtime.dll", "hid.pyd", "BLAZE Control.exe", "base_library.zip", "index.html"):
+        (tmp_path / f).write_text("x")
+    tried = []
+
+    def fake_remove(path):
+        tried.append(path)
+        if "hid.pyd" in path:
+            raise FileNotFoundError(path)       # no mark on this one
+
+    assert app.unblock_bundle(str(tmp_path), remove=fake_remove) == 2
+    assert all(p.endswith(":Zone.Identifier") for p in tried)
+    assert sorted(os.path.basename(p.split(":Zone")[0]) for p in tried) == ["BLAZE Control.exe", "Python.Runtime.dll", "hid.pyd"]
+    assert app.unblock_bundle() == 0                   # not a frozen Windows app: does nothing

@@ -20,3 +20,8 @@ desktop.ini
 
 # Files from the Claude desktop app
 Claude outputs/
+
+# Built / downloaded app copies (never commit these)
+BLAZE Control/
+BLAZE-Control-*.zip
+BLAZE-Control-*.exe
