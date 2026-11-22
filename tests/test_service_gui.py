@@ -108,7 +108,10 @@ def app(tmp_path):
     fake = FakeInstantMouse()
     fake.mem[0x08:0x10] = REAL_BUTTONS
     svc, _ = make_service(tmp_path, fake)
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:   # broken Tcl/Tk install on the machine (seen on GitHub's Windows + Python 3.13)
+        pytest.skip(f"Tk can't start here: {e}")
     a = BlazeApp(root, svc, check_official_app=False)
     yield a, fake
     root.destroy()
