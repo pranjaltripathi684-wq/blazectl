@@ -176,8 +176,8 @@ blazectl's own toolkit (`probe`, `dump`, `memdiff`, `analyze`/`diff` for Wiresha
 
 I built blazectl with an AI pair programmer (Claude, by Anthropic). I owned the hardware work: every
 dump, app experiment, physical button test and screenshot came from my mouse. I also made the decisions
-and reviewed and tested everything. Claude wrote most of the code and documents and analysed the dumps
-I captured. The safety rules above exist partly *because* of that: nothing is trusted until the real
+and reviewed and tested everything. Claude helped with the code and documents and with analysing the
+dumps I captured. The safety rules above exist partly *because* of that: nothing is trusted until the real
 mouse confirms it.
 
 ## What's next

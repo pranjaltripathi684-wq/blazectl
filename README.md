@@ -13,9 +13,8 @@ nearly everything the official app does (all but on-mouse profile slots and musi
 every write, and adds things the official app can't do: per-app profiles, an on-screen DPI popup, a security
 alert light, a macro security audit and a version that runs in the browser.
 
-> **Built with AI assistance.** I designed, tested and decided everything on real hardware; an AI pair
-> programmer (Claude) wrote most of the code and docs. Details in
-> [How this was built](#how-this-was-built-ai-assisted).
+> **Built with AI assistance.** I designed, tested and decided everything on real hardware, working with
+> an AI pair programmer (Claude). Details in [How this was built](#how-this-was-built-ai-assisted).
 
 ![blazectl: button mapping](docs/screenshots/buttons.png)
 
@@ -270,14 +269,13 @@ getting it named properly there and on a libratbag/Piper driver: [docs/upstream.
 
 ## How this was built (AI-assisted)
 
-blazectl was built with an AI pair programmer, **Claude** (Anthropic), and I want to be upfront about who
-did what.
+blazectl was built with an AI pair programmer, **Claude** (Anthropic), and I want to be upfront about how.
 
 - **Me (Pranjal):** the idea and every decision; all hardware work: every memory dump, every experiment in
   the official app, every physical button press, polling-rate test, screenshot and real-mouse check;
   reviewing results, choosing what to build and publishing.
-- **Claude:** wrote most of the code, tests and documentation, and analysed the dumps I captured to propose
-  each decoding, which I then confirmed on the mouse.
+- **Claude:** helped with the code, tests and documentation, and with analysing the dumps I captured to
+  propose each decoding, which I then confirmed on the mouse.
 - **How correctness is ensured:** nothing is trusted until the real mouse confirms it. Every write is read
   back; the encoders are pinned by tests to bytes the official app wrote on my mouse; and the browser
   version is tested packet-for-packet against the Python driver.
