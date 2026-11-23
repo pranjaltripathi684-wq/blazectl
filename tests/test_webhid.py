@@ -74,7 +74,7 @@ def run_python(tmp_path):
 
 def run_js(mem: bytes):
     out = subprocess.run([NODE, str(HERE / "web" / "run_scenario.js")], input=json.dumps({"mem": mem.hex(), "steps": STEPS}),
-                         capture_output=True, text=True, timeout=60)
+                         capture_output=True, encoding="utf-8", timeout=60)    # not the Windows code page
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)
 
