@@ -193,6 +193,8 @@ class Api:
             if path == "/api/profiles/save":
                 slot = str(body.get("slot", ""))
                 return self.profiles.save(slot, body.get("config"), body.get("active"))
+            if path.startswith("/api/agent"):
+                return self.agent(path, body)
             if path == "/api/backup":
                 import tempfile, os
 
@@ -205,6 +207,67 @@ class Api:
                 finally:
                     os.remove(tmp)
             raise NotFound(path)
+
+
+    # -- automation (the background agent) ------------------------------------
+    def agent_info(self) -> dict:
+        from . import agent as ag
+        d = os.path.dirname(self.svc.settings_path)
+        running = ag.is_running()
+        try:
+            autostart = ag.autostart_enabled()
+        except OSError:
+            autostart = False
+        slots = self.profiles.load()["slots"]
+        return {"config": ag.AgentConfigStore(d).load(), "running": running, "autostart": autostart,
+                "status": ag.read_status(d) if running else None,
+                "saved_profiles": [k for k, v in slots.items() if v], "platform": sys.platform}
+
+    def agent(self, path: str, body: dict) -> dict:
+        from . import agent as ag
+        d = os.path.dirname(self.svc.settings_path)
+        if path == "/api/agent/save":
+            try:
+                ag.AgentConfigStore(d).save(body["config"])
+            except ag.ConfigError as e:
+                raise ServiceError(str(e)) from e
+        elif path == "/api/agent/start":
+            if not ag.is_running():
+                ag.launch()
+                import time
+                for _ in range(30):
+                    if ag.is_running():
+                        break
+                    time.sleep(0.1)
+                if not ag.is_running():
+                    raise ServiceError("the agent didn't start; see agent.log in the settings folder")
+        elif path == "/api/agent/stop":
+            if not ag.request_stop(d):
+                raise ServiceError("the agent didn't stop within 6 s")
+        elif path == "/api/agent/autostart":
+            try:
+                ag.set_autostart(bool(body["on"]))
+            except OSError as e:
+                raise ServiceError(f"couldn't change start-with-login: {e}") from e
+        elif path == "/api/agent/test-alert":
+            if not ag.is_running():
+                raise ServiceError("start the agent first; it's what blinks the mouse")
+            cfg = ag.AgentConfigStore(d).load()["alerts"]
+            if not cfg["enabled"]:
+                raise ServiceError("turn the alert light on first")
+            want = ag.normalize_severity(body.get("severity", "high"))
+            sev = max(want, cfg["min_severity"], key=ag.SEVERITIES.index)      # always passes the minimum
+            res = ag.send_alert(sev, "Test alert from BLAZE Control", directory=d)
+            if res is None:
+                raise ServiceError("the agent isn't answering; stop and start it again")
+        elif path == "/api/agent/preview":
+            if not ag.is_running() or not ag.preview_popup(d):
+                raise ServiceError("start the agent first; it's what shows the popup")
+        elif path == "/api/agent/test-alert/ack":
+            ag.send_alert("", "", directory=d, ack=True)
+        elif path != "/api/agent":
+            raise NotFound(path)
+        return self.agent_info()
 
 
 def make_handler(api: Api, token: str, page: bytes):
@@ -266,7 +329,8 @@ def make_handler(api: Api, token: str, page: bytes):
             except (TypeError, ValueError, AttributeError) as e:
                 return self._json(HTTPStatus.BAD_REQUEST, {"error": f"bad request: {e}"})
             if self.path not in ("/api/state", "/api/profiles", "/api/profiles/save", "/api/macros/library",
-                                 "/api/macros/library/save", "/api/macros/library/delete"):
+                                 "/api/macros/library/save", "/api/macros/library/delete") \
+                    and not self.path.startswith("/api/agent"):
                 result["state"] = api.state()
             return self._json(HTTPStatus.OK, result)
 
@@ -311,7 +375,23 @@ def _open_window(url: str) -> None:
     webbrowser.open(url)
 
 
+_presence = None
+
+
+def claim_gui_presence() -> None:
+    """While the editor is open, the agent pauses per-app switching (it would change the mouse under you)."""
+    global _presence
+    try:
+        from .devlock import GUI_LOCK, Presence
+        p = Presence(GUI_LOCK)
+        if p.claim():
+            _presence = p
+    except OSError:
+        pass
+
+
 def main(open_window: bool = True) -> None:
+    claim_gui_presence()
     server, _ = make_server()
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"blazectl UI running at {url}  (local only; press Ctrl+C here to quit)")

@@ -119,7 +119,7 @@ def selftest(out: str | None = None) -> int:
         state = json.loads(urllib.request.urlopen(req, timeout=20).read())
         assert "connected" in state, "state API failed"
         mods = {}
-        for name in ("webview", "hid"):
+        for name in ("webview", "hid", "tkinter"):   # tkinter: the agent's DPI/profile/alert popups
             try:
                 __import__(name)
                 mods[name] = "ok"
@@ -142,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     if "--selftest" in argv:
         i = argv.index("--selftest")
         return selftest(argv[i + 1] if i + 1 < len(argv) else None)
+    if "--agent" in argv:                       # background agent (Start with Windows uses this)
+        from .agent import main as agent_main
+        return agent_main()
     if "--version" in argv:
         _report(f"{APP_NAME} {__version__}  (blazectl) Copyright (C) 2026 Pranjal Tripathi, GPL-3.0-or-later", None)
         return 0
@@ -150,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
     if not lock.ok:
         _message(f"{APP_NAME} is already running.")
         return 0
+    from .webui import claim_gui_presence
+    claim_gui_presence()                        # tells the agent to pause per-app switching while we're open
     try:
         server, _, url = _start_server()
     except Exception as e:

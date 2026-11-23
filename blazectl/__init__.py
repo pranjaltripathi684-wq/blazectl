@@ -1,7 +1,7 @@
 # blazectl - open-source configurator for the EvoFox Blaze Ultra mouse
 # Copyright (C) 2026 Pranjal Tripathi
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""blazectl - open-source Linux configurator for the EvoFox Blaze Ultra mouse.
+"""blazectl - open-source Windows/Linux configurator for the EvoFox Blaze Ultra mouse.
 
 The vendor protocol is undocumented, so this package ships two halves:
 
@@ -11,7 +11,7 @@ The vendor protocol is undocumented, so this package ships two halves:
   decoded protocol plugs into.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 __author__ = "Pranjal Tripathi"
 __copyright__ = "Copyright (C) 2026 Pranjal Tripathi"
 __license__ = "GPL-3.0-or-later"

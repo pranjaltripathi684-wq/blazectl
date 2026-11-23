@@ -3,7 +3,7 @@
 *Copyright © 2026 Pranjal Tripathi · part of [blazectl](README.md), GPL-3.0-or-later. Please credit the source if you reuse these findings.*
 
 What is known about the mouse's protocol, with the evidence for each item. All findings come from the
-author's own mouse, between 2026-11-21 and 2026-11-22.
+author's own mouse, between 2026-11-21 and 2026-11-23.
 
 ## Status
 
@@ -15,11 +15,15 @@ author's own mouse, between 2026-11-21 and 2026-11-22.
 | Polling rate (125/250/500/1000) | ✅ decoded + verified with a tester | `poll --rate N --execute` |
 | Buttons 1-7: 12 functions | ✅ decoded; codes match the official app's bytes | `buttons N=function --execute` |
 | Button 8 | ✅ only rapid-fire / dpi-loop work (firmware limit) | |
-| GUI | ✅ tkinter, tested on Windows-style Python + simulated mouse | `gui` |
+| GUI | ✅ web GUI + desktop app (BLAZE Control), tested on a simulated mouse | `gui`, `app` |
+| Browser version (WebHID) | ✅ JS driver, packet-for-packet identical to the Python one in tests; works on the real mouse in Chrome on Windows (2026-11-23, with nothing else using the mouse) | `build-web` |
 | Linux | ✅ code + udev rule ready; awaiting first real-hardware run | `scripts/linux-setup.sh` |
-| Macro | ✅ decoded; writer matches the app byte for byte; awaiting real-hardware confirmation | `macro set/clear`, GUI Macro tab |
+| Macro | ✅ decoded; writer matches the app byte for byte; a blazectl macro played on button 5 of the real mouse | `macro set/clear`, GUI Macro tab |
 | Media keys, Shortcuts | ✅ decoded; GUI/CLI output identical to the official app | `buttons 4=media:volume-up 5=shortcut:ctrl+c` |
 | Profiles Selection | ⏳ not decoded | |
+| Per-app profiles, DPI popup, alert light | ✅ PC-side (BLAZE Agent); work on the real mouse (2026-11-23) | `agent`, `auto`, `alert` |
+| DPI popup source | ✅ polling block 0x18 byte 0 (every 400 ms, garbled reads ignored). The DPI button sends **no** report on any readable channel (`blazectl events`, 2026-11-23) | |
+| Firmware | ✅ done (read-only): the READ command only reaches 4 KB of settings memory (mirrored), and the official app ships no firmware image | `firmware map`, `firmware appscan` |
 
 ## Device
 
@@ -27,6 +31,13 @@ author's own mouse, between 2026-11-21 and 2026-11-22.
 - Control channel: interface 1, usage page **0xFF01**, **feature report 0x07, 8 bytes**. Event channel: usage page 0xFF00, input report 0x06.
   - On Windows each collection is its own HID path, and the `hidN` numbers change between runs. On Linux, interface 1 is a single hidraw node containing all collections. blazectl finds the node by its feature report 0x07.
 - Header `5a 03 a5 40 14 fa 30 10` (PID/VID little-endian).
+
+## Related mice
+
+- **OpenRGB already detects 30fa:1440** as "Anko KM43243952 USB Gaming Mouse" (`InstantMouseController`,
+  checked 2026-11-23). Same chip and product ID as the Blaze Ultra. Its lighting packets are identical to
+  blazectl's. Other Instant mice it lists: 30fa:1030 (Advanced GTA 250), 30fa:1540 (Anko KM43277483),
+  30fa:1040 (Ant Esports GM600, the reference mouse of open-isy4500-customizer). See docs/upstream.md.
 
 ## The official EvoFox app
 
@@ -167,6 +178,96 @@ App change: button 4 → Media → Volume Up, button 7 → Media → Play/Pause,
   blazectl-written macro survived on the real mouse.
 - Clicking the same three settings in blazectl's GUI produces memory identical to the app's dump (outside the DPI/state
   bytes the app also rewrites).
+
+## Event channel (2026-11-23)
+
+`blazectl events` listened on every collection Windows lets a program read: consumer (media keys), vendor
+0xFF00 (input report 0x06), vendor 0xFF01 and generic desktop/system control. Pressing the DPI button
+repeatedly produced **0 reports**. On sibling mice the 0xFF00 channel reports DPI presses; on this one it
+stays silent. So the agent's DPI popup has to poll the active level (block 0x18 byte 0). That polling uses
+the memory protocol, which means a browser tab running BLAZE Web (it can't share blazectl's lock) must not
+be used while the popup is on.
+
+## Incident: two programs at once damaged the memory (2026-11-23)
+
+At about 17:23 BLAZE Web (a browser tab, outside blazectl's lock) synced while the BLAZE Agent was reading the
+state block every 0.4 s for the DPI popup. Afterwards (dump `check.json`, also tests/data/damaged_20261123.json),
+compared with the previous day's dump (m7_ms.json):
+
+| block | before | after |
+|---|---|---|
+| 0x018 state | `1d 3f 32 00 82 ff 00 00` | `80 3f 82 00 82 3f 00 82` |
+| 0x050 profile table | `21 22 23 24 25 35 00 26` | `19 3f 32 24 25 35 00 26` |
+| 0x068-0x078 macro pointers | end = 0x410 | 0x6e = 0, others as if end = 0x400 |
+| 0x0d0-0x0d8 button 7 media entry | `00 ff cd 00 08 04 …` | zeros, then `19 3f 32 00 82 ff 00 00` |
+| 0x0a8, 0x110, 0x140 (normally empty) | zeros | `19 3f 32 00 82 (ff)…` |
+
+Every damaged block contains pieces of the **state block** (`19 3f 32 00 82 ff 00 00` = state at level 2),
+partly at addresses blazectl never writes (0x50, 0x110, 0x140). So when two programs interleave the
+memory protocol, the chip can store bytes it had loaded for one program's read at an address involved in the
+other's write. The exact mechanism isn't known. Header, buttons, macro data and DPI stayed valid; the mouse
+kept working, but button 7's media key and the macro table didn't decode (`macro entry … points outside the
+macro area (0x1900)`).
+
+**Repaired on the real mouse at 20:30** with `blazectl restore m7_ms.json --blocks 0x18,0x50,0x68,0x70,0x78,0xa8,0xd0,0xd8,0x110,0x140
+--execute`: every block verified, and `blazectl audit` is clean again (buttons 4/7 media keys, 5 shortcut,
+6 macro all decode; no data in empty areas). This is also the first real-hardware use of writes outside the
+decoded blocks (0x50, 0x110, 0x140): they stored and read back correctly.
+
+Fixes: `blazectl restore` (put chosen blocks back to a backup of the same mouse, header never written,
+verified); the DPI popup is now off by default and warns about BLAZE Web; BLAZE Web asks for confirmation
+before its first write each session. Rule: **only one program may talk to the mouse at a time.**
+
+## Security note
+
+Macros sit in flash and play on any PC. On Windows, any user-level program can write them (no admin, no
+prompt). `blazectl audit` reads 0x000-0xFFF and rates every stored key sequence; it also reports leftover
+key data (stale tails of old macros after `end_of_data`, e.g. `⏎b` at 0x428 on this mouse) and data in
+normally-empty areas (0x0F8-0x3FF, 0x800-0xF9F). Write-up: docs/security/macro-persistence.md.
+
+## Firmware (read-only exploration, 2026-11-23)
+
+Plan, using only the documented READ command (no writes, no unknown commands):
+
+1. `blazectl firmware map`: one 8-byte read per 256 bytes over 0x0000-0xFFFF. Shows erased, zero and data
+   regions, and whether the address wraps around (the 0x0000 header reappearing at 0x1000, 0x2000…).
+2. `blazectl firmware dump --save fw.json` + `firmware analyze`: a full read, then entropy per page, ARM
+   Cortex-M / 8051 reset-vector checks and strings.
+3. `blazectl firmware appscan <EvoFox folder>`: static scan of the official app for firmware images
+   (.bin/.hex or high-entropy blobs), the 30fa PIDs it knows, and update/bootloader strings.
+
+**Result of `firmware map` on the real mouse (2026-11-23):**
+
+```
+0x0000-0x00ff  data      settings: header, buttons, DPI, state, entries, pointers
+0x0100-0x03ff  zero
+0x0400-0x04ff  data      macro data
+0x0500-0x0fff  erased    ff
+0x1000-0xffff  mirror    0x0000-0x0fff repeated (the address wraps every 0x1000)
+```
+
+So the memory commands reach exactly **4 KB of settings memory**, mirrored 16 times across the 16-bit
+address space. The firmware's program code is **not readable** through this protocol, so it can't be
+dumped or analysed this way, and nothing blazectl writes can touch it. The read-only method is done:
+going further would need the official app's update files (`firmware appscan`) or hardware tools
+(e.g. an ISP/debug interface on the chip), which this project won't do.
+
+**Result of `firmware appscan` on the official app** (`C:\Program Files (x86)\EvoFox Blaze Gaming Mouse`,
+136 files, 2026-11-23):
+
+- **No firmware image**: no .bin/.hex/.fw files and no large high-entropy blobs. The app can't update the
+  mouse's firmware.
+- Main program `Gaming Mouse 3.0.exe`, an Inno Setup installer, and settings in `skins\config\config.ini`
+  (`PRODUCTNAME_EN=EvoFox Blaze Gaming Mouse`), `setup.ini` and `skins\1_INI_EN\*.ini`.
+- The uninstaller data mentions `instantupdater`, probably a process name inherited from Instant's
+  reference software (no updater ships in this folder).
+- Bundled presets: `constMacro.dat`, `macroReset\macroGrp.ini` and `skins\1_INI_EN\PUBG.dat` with a
+  `skin_gun.ini` page, probably preset game macros. Not opened yet.
+- No `VID_30FA&PID_…` text: the app must keep the USB IDs as numbers inside the exe.
+- (The first scan also flagged "isp/iap/dfu" in JPG skins and in the exe; those were random bytes and
+  words like "display". Fixed: the scanner now skips images and matches short words whole.)
+
+Conclusion: firmware is out of reach without opening the mouse, and that's where this project stops.
 
 ## Open
 

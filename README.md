@@ -4,12 +4,18 @@
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
 [![license](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![AI-assisted](https://img.shields.io/badge/built%20with-AI%20assistance%20(Claude)-8A2BE2)](#how-this-was-built-ai-assisted)
 
 An open-source configurator for the **EvoFox Blaze Ultra** gaming mouse that runs on **Windows and Linux**.
 The official EvoFox software is Windows-only, crashes, fails to detect the mouse, and doesn't say whether a
 setting was saved. The mouse's USB protocol is undocumented, so I reverse-engineered it. blazectl now does
-nearly everything the official app does (all but profile switching and music-reactive lighting), and it verifies
-every write.
+nearly everything the official app does (all but on-mouse profile slots and music-reactive lighting), verifies
+every write, and adds things the official app can't do: per-app profiles, an on-screen DPI popup, a security
+alert light, a macro security audit and a version that runs in the browser.
+
+> **Built with AI assistance.** I designed, tested and decided everything on real hardware; an AI pair
+> programmer (Claude) wrote most of the code and docs. Details in
+> [How this was built](#how-this-was-built-ai-assisted).
 
 ![blazectl: button mapping](docs/screenshots/buttons.png)
 
@@ -28,6 +34,13 @@ No Python needed. The app opens in its own window (it uses the Edge WebView2 run
 > certificates are paid). Click **More info → Run anyway**. The app is built from this repository's source by
 > GitHub Actions ([build-app workflow](.github/workflows/build-app.yml)), so you can check exactly what's in it.
 
+**No install at all: BLAZE Web.** Open <https://pranjaltripathi684-wq.github.io/blazectl/> in **Chrome or Edge**
+on a computer, click **Connect mouse** and pick "INSTANT USB Gaming Mouse". Same interface, talking to the
+mouse through WebHID; nothing leaves your computer (the page is one file and its security policy blocks all
+network access). Automation needs the desktop app. On Linux the [udev rule](#linux-kali-etc) is needed first.
+Only one program can talk to the mouse at a time: **close BLAZE Control, stop the BLAZE Agent and quit the
+EvoFox app** before using BLAZE Web (a browser tab can't share blazectl's lock).
+
 **Prefer the manual setup** (Python, command line, Linux)? See [Windows](#windows) and
 [Linux](#linux-kali-etc) below. `python -m blazectl gui` opens the same interface in a browser app window,
 and `python -m blazectl app` opens it in its own window after `pip install pywebview`.
@@ -40,7 +53,12 @@ and `python -m blazectl app` opens it in its own window after `pip install pyweb
 | Button remapping: 8 buttons, 12 functions | `buttons` | Buttons |
 | Media keys (volume, play/pause, tracks, mute, browser, mail…) and shortcuts (e.g. Ctrl+C) | `buttons` | Buttons |
 | Keyboard macros: record/edit, play N times or while held, buttons 2-7 | `macro` | Macro |
+| **Per-app profiles:** valorant.exe → Game I, code.exe → Office… (only changed settings are written) | `auto`, `agent` | Auto |
+| **On-screen DPI popup** when you press the DPI button | `agent` | Auto |
+| **Alert light:** blinks the mouse when a security tool (e.g. TriageLens) reports an alert | `alert`, `agent` | Auto |
+| **Security audit:** could a stored macro type commands? (read-only) | `audit` | |
 | Full memory backup | `dump --save` | Backup |
+| Read-only firmware exploration (address map, code search, official-app scan) | `firmware` | |
 
 Every change is **verified by reading it back**, undone automatically if it doesn't stick, and reported
 in plain words. That fixes the original software's silent failures, crashes and "did it save?" problems.
@@ -60,6 +78,49 @@ in plain words. That fixes the original software's silent failures, crashes and 
 - **Hardened local web GUI.** Uses only Python's standard library, listens on 127.0.0.1 only, requires a
   per-session token, checks the Host header against DNS rebinding, and sends a strict CSP (details below).
 - **No dependencies on Linux.** It talks to `/dev/hidraw` directly. On Windows it needs only `hidapi`.
+
+![Automation page](docs/screenshots/automation.png)
+
+## Automation: the BLAZE Agent
+
+A small background program (no window) that does three optional jobs. Turn them on in the app's **Auto**
+page, click **START**, and tick **start with Windows** to keep it running. No admin rights needed.
+
+- **Per-app profiles.** Rules like `valorant.exe → Game I`, `cs2* → Game II`, `title:*YouTube* → Media`.
+  When an app stays in front for 1.5 s, its profile is applied. Only the settings that differ are written to
+  the mouse (lighting is RAM-only), so switching between profiles that share DPI and buttons costs no
+  flash writes. Switching pauses while BLAZE Control is open. Linux needs an X11 session (Kali's Xfce is fine).
+- **DPI popup** (off by default). "DPI 1600 · level 3" on screen, in the level's colour, when the active level changes.
+  It doesn't take focus, lets clicks through, and shows over borderless/windowed games (exclusive
+  fullscreen draws over everything). The mouse doesn't announce DPI changes, so the agent reads the level
+  every 0.4 s (read-only, garbled reads ignored); it pauses while the EvoFox app runs. **Don't use BLAZE Web
+  while it's on**: a browser can't share blazectl's lock, and two programs talking at once once scrambled
+  several memory blocks on my mouse (repaired with `blazectl restore`, see below).
+- **Alert light.** The mouse blinks in the alert's colour (critical = fast red) and a popup shows the
+  title, then your lighting comes back. Feed it JSON lines in a file, `blazectl alert`, or a local token-
+  protected endpoint. See [docs/alert-light.md](docs/alert-light.md), including the TriageLens hookup.
+
+```
+blazectl auto which                    # name of the app you switch to (wait 3 s)
+blazectl auto add valorant.exe game1   # rules; also: default office, on, off, list, remove
+blazectl agent --background            # start it (or --status, --stop, --autostart on)
+blazectl alert --severity critical "Canary file touched"
+```
+
+The agent, the app and CLI commands share one machine-wide lock, so they never talk to the mouse at the same time.
+
+## Security audit
+
+A mouse that stores keyboard macros can carry keystrokes from PC to PC, and on Windows any program can
+write them without admin rights. `blazectl audit` reads the mouse (read-only), shows what every stored
+macro or shortcut would type (`[Win+R]cmd⏎`), and rates it from *info* to *high*:
+
+```
+blazectl audit                  # exit code 0 clean, 1 check, 2 high
+blazectl audit --json --save evidence.json
+```
+
+The full write-up: [docs/security/macro-persistence.md](docs/security/macro-persistence.md).
 
 ## Windows
 
@@ -102,6 +163,8 @@ in plain words. That fixes the original software's silent failures, crashes and 
    ```
 3. GUI: `python3 -m blazectl gui`. It opens in Chromium/Chrome as an app window if installed,
    otherwise in your default browser (e.g. Firefox). No extra packages are needed.
+4. Optional, for the agent: per-app profiles use `xprop` (Kali: `x11-utils`, usually installed) and
+   the popup uses tkinter (`python3-tk`). Without tkinter the agent falls back to desktop notifications.
 
 ## Command line
 
@@ -131,6 +194,11 @@ python -m blazectl macro set 5 "h tap 30, i tap 30" --repeat 3 --execute
 python -m blazectl macro clear 4 --execute                  # back to the factory function
 
 python -m blazectl dump --save backup.json                  # read-only memory backup
+python -m blazectl restore backup.json                      # list blocks that differ from a backup (repair: --blocks … --execute)
+python -m blazectl audit                                    # security check of stored macros (read-only)
+python -m blazectl events                                   # watch the mouse's event channel (read-only)
+python -m blazectl firmware map                             # read-only address map (also: dump, analyze, appscan)
+python -m blazectl build-web --out site                     # build BLAZE Web (one HTML file)
 ```
 
 - DPI values: 200, 400 … 2000 (steps of 200), 2400, 3200 … 11200 (steps of 800), 12800.
@@ -165,6 +233,10 @@ USB device, the server is locked down:
 These are covered by `tests/test_webui.py`. A simpler tkinter window is still available with
 `blazectl gui --classic`.
 
+**BLAZE Web** is the same page with the driver ported to JavaScript (`blazectl/web/webhid.js`). A test runs
+the Python and JavaScript drivers on the same simulated mouse through the same 19 GUI actions and requires
+**byte-identical USB traffic** (over 7,000 packets), identical answers and identical final memory.
+
 ## Safety
 
 - Writes only touch decoded areas (settings blocks, and the macro area laid out exactly like the official
@@ -177,7 +249,8 @@ These are covered by `tests/test_webui.py`. A simpler tkinter window is still av
 
 ## How it was decoded
 
-See [FINDINGS.md](FINDINGS.md) for the full protocol, memory map and the evidence for each value. In short:
+The story, with diagrams: [docs/reverse-engineering.md](docs/reverse-engineering.md). The full protocol,
+memory map and evidence for each value: [FINDINGS.md](FINDINGS.md). In short:
 
 - The mouse is an **Instant Microelectronics** chip (USB `30fa:1440`). Its settings channel is 8-byte
   feature report `0x07` on vendor usage page `0xFF01`.
@@ -190,13 +263,33 @@ See [FINDINGS.md](FINDINGS.md) for the full protocol, memory map and the evidenc
 - Unit tests pin the encoders to bytes the official app actually wrote.
 
 The generic reverse-engineering toolkit is included too: `probe` (HID report descriptors), `analyze` /
-`diff` / `checksum` (Wireshark USB captures from USBPcap or usbmon), `extract` / `replay`.
+`diff` / `checksum` (Wireshark USB captures from USBPcap or usbmon), `extract` / `replay`, `memdiff`.
+
+OpenRGB already drives this mouse's lighting (it shares its USB ID with the Anko KM43243952); notes on
+getting it named properly there and on a libratbag/Piper driver: [docs/upstream.md](docs/upstream.md).
+
+## How this was built (AI-assisted)
+
+blazectl was built with an AI pair programmer, **Claude** (Anthropic), and I want to be upfront about who
+did what.
+
+- **Me (Pranjal):** the idea and every decision; all hardware work: every memory dump, every experiment in
+  the official app, every physical button press, polling-rate test, screenshot and real-mouse check;
+  reviewing results, choosing what to build and publishing.
+- **Claude:** wrote most of the code, tests and documentation, and analysed the dumps I captured to propose
+  each decoding, which I then confirmed on the mouse.
+- **How correctness is ensured:** nothing is trusted until the real mouse confirms it. Every write is read
+  back; the encoders are pinned by tests to bytes the official app wrote on my mouse; and the browser
+  version is tested packet-for-packet against the Python driver.
+
+If you contribute to other projects using code from here, check their AI policy first (OpenRGB, for
+example, doesn't accept AI-generated submissions).
 
 ## Development
 
 ```
 pip install -e ".[dev]"     (add "hidapi" on Windows)
-python -m pytest            # GUI tests run when tkinter and a display are available
+python -m pytest            # 220+ tests; the WebHID parity test needs Node.js
 ```
 
 Build the Windows app yourself (normally GitHub Actions does this when a release is published):
@@ -205,7 +298,7 @@ Build the Windows app yourself (normally GitHub Actions does this when a release
 pip install . pywebview hidapi pyinstaller
 python packaging/make_version_info.py
 pyinstaller --noconfirm --clean packaging/blaze_control.spec     # -> dist/BLAZE Control/BLAZE Control.exe
-set BLAZE_VERSION=0.2.1 && iscc packaging/installer.iss          # -> dist/BLAZE-Control-Setup-0.2.1.exe (needs Inno Setup)
+set BLAZE_VERSION=0.3.0 && iscc packaging/installer.iss          # -> dist/BLAZE-Control-Setup-0.3.0.exe (needs Inno Setup)
 ```
 
 ```
@@ -216,6 +309,13 @@ blazectl/webui.py, web/       local web GUI (server + single-page app)
 blazectl/gui.py               classic tkinter GUI
 blazectl/cli.py               command line
 blazectl/app.py               BLAZE Control desktop app (native window around the web GUI)
+blazectl/agent.py             BLAZE Agent: per-app profiles, DPI popup, alert light
+blazectl/foreground.py        which app is in front (Win32 / X11)
+blazectl/overlay.py           on-screen popups
+blazectl/devlock.py           machine-wide lock so programs never interleave USB packets
+blazectl/audit.py             macro security audit
+blazectl/firmware.py          read-only firmware exploration
+blazectl/web/webhid.js, webbuild.py   BLAZE Web (WebHID driver + page builder)
 packaging/                    app icon, PyInstaller spec, Inno Setup installer script
 blazectl/backend.py           picks hidraw (Linux) or hidapi (Windows)
 blazectl/hidraw.py, winhid.py transports
@@ -223,8 +323,10 @@ blazectl/capture.py, analysis.py, replay.py, descriptor.py   reverse-engineering
 udev/, scripts/linux-setup.sh Linux permissions
 tests/                        simulated mouse, real-dump test vectors
 docs/screenshots/             README images (rendered from the simulated mouse)
+docs/*.md, docs/security/     write-ups: reverse engineering, macro security, alert light, upstream
 .github/workflows/tests.yml   CI: the test suite on Linux and Windows
 .github/workflows/build-app.yml  builds the Windows installer + portable ZIP for each release
+.github/workflows/pages.yml   publishes BLAZE Web to GitHub Pages
 ```
 
 ## License
@@ -249,3 +351,4 @@ settings memory: take a backup first (`dump --save` or **Backup** in the GUI). U
 Lighting constants: OpenRGB's InstantMouseController (Morgan Guimard). Packet layouts and the
 config-memory protocol: [open-isy4500-customizer](https://github.com/julianfdz/open-isy4500-customizer)
 (MIT, compatible with GPL-3.0). `tests/isy_vectors.json` was generated by running that project's code.
+Code written with the help of Claude (Anthropic); see [How this was built](#how-this-was-built-ai-assisted).

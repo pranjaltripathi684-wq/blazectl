@@ -46,6 +46,7 @@ DPI_BLOCK = 0x10
 STATE_BLOCK = 0x18
 WRITABLE_BLOCKS = (BUTTON_BLOCK, DPI_BLOCK, STATE_BLOCK)
 # Macro storage (drivers/macro.py): pointer words, the per-button entry table, the macro data.
+RESTORE_START, RESTORE_END = 0x008, 0x800     # restore_blocks() range: everything but the header
 MACRO_BLOCKS = frozenset([0x68, 0x70, 0x78, *range(0xA0, 0xF8, 8), *range(0x400, 0x800, 8)])
 # App buttons that can hold a macro, media key or shortcut. 4, 5, 6, 7 confirmed by app dumps
 # (5 = the shortcut in m7_ms); 2, 3 follow the same entry spacing. 1 must stay Left Click,
@@ -395,8 +396,11 @@ class InstantMouse:
             note = " (PID found in header)" if any(i in header for i in ids) else " (PID not found in header)"
         return True, f"header {header.hex(' ')} matches the Instant layout{note}"
 
-    def write_block(self, addr: int, data: bytes) -> None:
-        if addr not in WRITABLE_BLOCKS and addr not in MACRO_BLOCKS:
+    def write_block(self, addr: int, data: bytes, _restore: bool = False) -> None:
+        if _restore:                     # restore_blocks(): any settings block, never the header
+            if not (RESTORE_START <= addr < RESTORE_END and addr % 8 == 0 and len(data) == 8):
+                raise InstantError(f"refusing to restore block 0x{addr:02x}: only 8-byte blocks 0x008-0x7f8")
+        elif addr not in WRITABLE_BLOCKS and addr not in MACRO_BLOCKS:
             raise InstantError(f"refusing to write block 0x{addr:02x}; it isn't a decoded settings block")
         n = len(data)
         for i, b in enumerate(data):
@@ -407,6 +411,24 @@ class InstantMouse:
         self._send(bytes([REPORT_ID, CMD_MEMORY, MEM_IDLE, 0, addr & 0xFF, addr >> 8, 0, 0]))
         self.sleep(0.002)
 
+    def restore_blocks(self, wanted: dict[int, bytes]) -> list[int]:
+        """Put blocks back to the bytes of a backup taken from THIS mouse (the caller checks the header).
+
+        Used to repair damage, e.g. after two programs talked to the mouse at once. Any settings block
+        0x008-0x7f8 can be restored, but only to bytes the mouse itself held before; the header (0x000)
+        is never written. Each block is verified; the mouse reloads once at the end."""
+        written = []
+        for addr in sorted(wanted):
+            data = bytes(wanted[addr])
+            before = self.read_block(addr)
+            if before == data:
+                continue
+            self._verified_write(addr, before, data, _restore=True)
+            written.append(addr)
+        if written:
+            self.reload()
+        return written
+
     def reload(self) -> None:
         """Apply stored memory now. Note: this resets lighting set in RAM."""
         self._send(memory_packet(MEM_RELOAD, 0, 0, 0, 0))
@@ -414,16 +436,17 @@ class InstantMouse:
         self._send(memory_packet(MEM_IDLE, 0, 0, 0, 0))
         self.sleep(0.05)
 
-    def _verified_write(self, addr: int, before: bytes, after: bytes) -> bytes:
-        self.write_block(addr, after)
+    def _verified_write(self, addr: int, before: bytes, after: bytes, _restore: bool = False) -> bytes:
+        self.write_block(addr, after, _restore)
         check = self.read_block(addr)
         if check != after:
-            self.write_block(addr, before)
+            self.write_block(addr, before, _restore)
             restored = self.read_block(addr)
             state = "restored" if restored == before else f"RESTORE ALSO FAILED (now {restored.hex(' ')})"
             raise InstantError(
                 f"mouse did not store block 0x{addr:02x}: wrote {after.hex(' ')}, read back {check.hex(' ')}; "
-                f"previous value {state}."
+                f"previous value {state}. If another program is using the mouse at the same time (the EvoFox app, "
+                "BLAZE Web in a browser, or BLAZE Control while the web page is open), close it and try again."
             )
         return check
 

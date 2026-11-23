@@ -156,6 +156,25 @@ class MouseService:
         self._run(lambda m, node: m.set_lighting(mode_name=s.mode, colors=s.colors, speed=s.speed,
                                                  brightness=s.brightness, direction=s.direction))
 
+    restore_lighting = _relight
+
+    def preview_lighting(self, s: LightingSettings) -> None:
+        """Show lighting without saving it as the user's choice (alerts). RAM only: no flash writes."""
+        s.packets()
+        self._run(lambda m, node: m.set_lighting(mode_name=s.mode, colors=s.colors, speed=s.speed,
+                                                 brightness=s.brightness, direction=s.direction))
+
+    def read_active(self, with_values: bool = False) -> tuple[int, int, list[int | None] | None]:
+        """Cheap read for the DPI popup: (active level 0-7 as read, enabled-levels mask, DPI values or None).
+        Read-only. Callers must check the level is valid: a garbled read can return anything."""
+        def go(m, node):
+            st = m.read_block(ins.STATE_BLOCK)
+            vals = None
+            if with_values:
+                vals = [ins.code_to_dpi(c, node.pid) for c in ins.decode_dpi(m.read_block(ins.DPI_BLOCK))]
+            return st[0] & 7, st[1] & 0x3F, vals
+        return self._run(go)
+
     # -- memory settings ------------------------------------------------------
 
     def set_dpi(self, values: list[int]) -> list[int]:
@@ -205,6 +224,70 @@ class MouseService:
 
     def reset_buttons(self) -> dict[int, int]:
         return self.set_buttons({num: code for num, _, _, _, code in ins.BUTTON_SLOTS})
+
+    def apply_config(self, config: dict) -> list[str]:
+        """Write a whole profile (as ProfileStore stores it) in ONE device session.
+
+        Only settings that differ from the mouse are written, so switching between profiles that
+        share DPI/buttons costs no flash writes at all; lighting lives in RAM and is always sent.
+        The mouse reloads once at the end (if anything was stored). Returns what changed.
+        """
+        cfg = ProfileStore.validate(config)
+        light = LightingSettings(**cfg["lighting"])
+        light.packets()                                   # validate before touching the device
+
+        def go(m, node):
+            ok, msg = m.check_header(pid=node.pid)
+            if not ok:
+                raise ServiceError(msg)
+            done: list[str] = []
+            try:
+                current_special = m.get_macros()
+            except ins.InstantError as e:
+                raise ServiceError(f"can't read the macros on the mouse, not switching: {e}") from e
+            current_codes = m.get_buttons()
+            bind, unbind, plain = {}, {}, {}
+            for num in sorted(current_codes):
+                want_fn = cfg["buttons"].get(str(num))
+                want_b = cfg["macros"].get(str(num))
+                have_b = current_special.get(num)
+                if want_b is not None:
+                    b = binding_from_json(want_b)
+                    if have_b is None or have_b.to_json() != b.to_json():
+                        bind[num] = b
+                elif want_fn is None:
+                    continue                              # profile doesn't mention this button
+                elif want_fn not in ins.BUTTON_FUNCTIONS:
+                    raise ServiceError(f"profile: button {num} = {want_fn!r} has no macro/media/shortcut data")
+                elif have_b is not None:
+                    unbind[num] = ins.BUTTON_FUNCTIONS[want_fn]
+                elif current_codes[num] != ins.BUTTON_FUNCTIONS[want_fn]:
+                    plain[num] = ins.BUTTON_FUNCTIONS[want_fn]
+            if bind or unbind:
+                if m.set_macros({**unbind, **bind}, pid=node.pid, apply_now=False)["changed"]:
+                    done.append("macros")
+            if plain:
+                if m.set_buttons(plain, pid=node.pid, apply_now=False)["changed"]:
+                    done.append("buttons")
+            codes = [ins.dpi_to_code(v, node.pid) for v in cfg["dpi"]]
+            if m.set_dpi(codes, pid=node.pid, apply_now=False)["changed"]:
+                done.append("dpi")
+            if cfg["polling"] not in ins.POLL_RATES:
+                raise ServiceError(f"profile: polling rate {cfg['polling']} is not supported")
+            if m.set_polling_byte(ins.POLL_RATES[cfg["polling"]], pid=node.pid, apply_now=False)["changed"]:
+                done.append("polling")
+            if done:
+                m.reload()
+            m.set_lighting(mode_name=light.mode, colors=light.colors, speed=light.speed,
+                           brightness=light.brightness, direction=light.direction)
+            return done
+
+        try:
+            done = self._run(go)
+        except ins.InstantError as e:
+            raise ServiceError(str(e)) from e
+        self.save_lighting(light)
+        return done
 
 
 PROFILE_SLOTS = ("office", "game1", "game2", "media")

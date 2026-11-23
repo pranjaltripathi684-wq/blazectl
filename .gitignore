@@ -25,3 +25,6 @@ Claude outputs/
 BLAZE Control/
 BLAZE-Control-*.zip
 BLAZE-Control-*.exe
+
+# BLAZE Web build output (published by the web workflow)
+site/

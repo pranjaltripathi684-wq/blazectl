@@ -23,8 +23,9 @@ a = Analysis(
     pathex=[root],
     binaries=binaries,
     datas=datas,
-    hiddenimports=["hid", "clr", "webview.platforms.edgechromium", "webview.platforms.winforms"],
-    excludes=["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "gi", "pytest"],
+    hiddenimports=["hid", "clr", "webview.platforms.edgechromium", "webview.platforms.winforms",
+                   "tkinter", "blazectl.agent", "blazectl.overlay", "blazectl.foreground", "blazectl.audit"],
+    excludes=["PyQt5", "PyQt6", "PySide2", "PySide6", "gi", "pytest"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

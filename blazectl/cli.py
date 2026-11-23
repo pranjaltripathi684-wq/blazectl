@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from . import __version__
@@ -281,6 +282,90 @@ def _load_dump(path):
     with open(path) as f:
         data = json.load(f)
     return {int(k, 16): bytes.fromhex(v) for k, v in data["blocks"].items()}
+
+
+BLOCK_NAMES = {0x08: "buttons", 0x10: "DPI + button 8", 0x18: "state: active level, polling",
+               0x68: "macro pointers", 0x70: "macro pointers", 0x78: "macro pointers"}
+INTENTIONAL = {0x08, 0x10}          # blocks you change on purpose: never suggested for restore
+
+
+def _block_name(a: int) -> str:
+    if a in BLOCK_NAMES:
+        return BLOCK_NAMES[a]
+    if 0xA0 <= a < 0xF8:
+        return "macro entries"
+    if 0x400 <= a < 0x800:
+        return "macro data"
+    if 0x40 <= a < 0x68:
+        return "profile tables"
+    return "not decoded"
+
+
+def cmd_restore(args):
+    """Repair: put chosen blocks back to their bytes in a backup of this mouse."""
+    from datetime import datetime
+
+    from .drivers.instant import RESTORE_END, RESTORE_START, InstantMouse
+    from .service import MouseService, ServiceError
+
+    backup = _load_dump(args.backup)
+    node = _instant_node(args)
+    with make_device(node) as dev:
+        m = InstantMouse(dev, pid=node.pid)
+        header = m.read_block(0)
+        if backup.get(0) != header:
+            sys.exit(f"refusing: the backup's header ({backup.get(0, b'').hex(' ') or 'missing'}) isn't this mouse's "
+                     f"({header.hex(' ')})")
+        if not args.blocks:
+            diff = []
+            for a in sorted(x for x in backup if RESTORE_START <= x < RESTORE_END):
+                cur = m.read_block(a)
+                if cur != backup[a]:
+                    diff.append((a, cur))
+            if not diff:
+                print("the mouse matches the backup in every block 0x008-0x7f8")
+                return
+            print(f"blocks that differ from {args.backup}:")
+            for a, cur in diff:
+                tag = "  (you may have changed this on purpose)" if a in INTENTIONAL else ""
+                print(f"  0x{a:03x} {_block_name(a):30} now {cur.hex(' ')}  backup {backup[a].hex(' ')}{tag}")
+            picks = ",".join(f"0x{a:x}" for a, _ in diff if a not in INTENTIONAL)
+            if picks:
+                print(f"\nto restore the damaged ones:  blazectl restore {args.backup} --blocks {picks}   (dry run first)")
+            return
+        try:
+            blocks = sorted({int(b, 16) for b in args.blocks.split(",") if b.strip()})
+        except ValueError:
+            sys.exit("--blocks: comma-separated hex addresses, e.g. 0x18,0x50")
+        bad = [a for a in blocks if not (RESTORE_START <= a < RESTORE_END and a % 8 == 0) or a not in backup]
+        if bad:
+            sys.exit("refusing: " + ", ".join(f"0x{a:x}" for a in bad) + " (must be 8-byte blocks 0x008-0x7f8 "
+                     "that the backup contains; the header is never written)")
+        changes = []
+        for a in blocks:
+            cur = m.read_block(a)
+            mark = "same" if cur == backup[a] else "RESTORE"
+            print(f"  0x{a:03x} {_block_name(a):30} now {cur.hex(' ')}  ->  {backup[a].hex(' ')}  {mark}")
+            if cur != backup[a]:
+                changes.append(a)
+        if not changes:
+            print("nothing to do: those blocks already match the backup")
+            return
+        if not args.execute:
+            print(f"\ndry run: {len(changes)} block(s) would be written. Add --execute to do it.")
+            return
+        safety = f"pre-restore-{datetime.now():%Y%m%d-%H%M%S}.json"
+        mem = m.dump(RESTORE_END)
+        with open(safety, "w") as f:
+            json.dump({"usb_id": node.usb_id, "name": node.hid_name, "note": "taken by blazectl restore before writing",
+                       "blocks": {f"0x{a:02x}": b.hex() for a, b in mem.items()}}, f, indent=2)
+        print(f"saved the current memory to {safety} first")
+        written = m.restore_blocks({a: backup[a] for a in changes})
+    print(f"restored and verified: {', '.join(f'0x{a:03x}' for a in written)}; the mouse reloaded")
+    try:
+        MouseService().restore_lighting()             # the reload dropped the lighting
+    except ServiceError:
+        print("(run `blazectl light ...` to put your lighting back)")
 
 
 def cmd_memdiff(args):
@@ -584,6 +669,302 @@ def cmd_gui(args):
     web_main(open_window=not args.no_window)
 
 
+# ------------------------------------------------------------------ audit ---
+
+
+def cmd_audit(args):
+    """Read-only check for stored key sequences that could run commands."""
+    from .audit import audit_memory, format_report, image_from_blocks
+    from .drivers.instant import InstantMouse
+
+    if args.dump:
+        mem = image_from_blocks(_load_dump(args.dump))
+        source = args.dump
+    else:
+        node = _instant_node(args)
+
+        def progress(done, total):
+            if done % 0x200 == 0 or done == total:
+                print(f"\r  reading memory (read-only)… {done * 100 // total:3d}%", end="", file=sys.stderr, flush=True)
+
+        with make_device(node) as dev:
+            blocks = InstantMouse(dev, pid=node.pid).dump(args.end, progress=progress)
+        print("", file=sys.stderr)
+        mem = image_from_blocks(blocks)
+        source = f"{node.usb_id} {node.hid_name}"
+        if args.save:
+            with open(args.save, "w") as f:
+                json.dump({"usb_id": node.usb_id, "name": node.hid_name,
+                           "blocks": {f"0x{a:02x}": b.hex() for a, b in blocks.items()}}, f, indent=2)
+    report = audit_memory(mem, source)
+    print(json.dumps(report.to_json(), indent=2) if args.json else format_report(report))
+    if args.save and not args.dump:
+        print(f"memory saved to {args.save} (evidence)", file=sys.stderr)
+    sys.exit(report.exit_code)
+
+
+# --------------------------------------------------------------- firmware ---
+
+
+def cmd_firmware(args):
+    """Read-only firmware exploration."""
+    from . import firmware as fw
+    from .drivers.instant import InstantError, InstantMouse
+
+    if args.action == "appscan":
+        if not args.path or not os.path.isdir(args.path):
+            sys.exit('give the official app\'s folder, e.g. blazectl firmware appscan "C:\\Program Files (x86)\\EvoFox"')
+        print(fw.scan_app_folder(args.path).text())
+        return
+    if args.action == "analyze":
+        if not args.path:
+            sys.exit("give a dump made with `blazectl firmware dump --save fw.json`")
+        blocks = _load_dump(args.path)
+        size = max(blocks) + 8 if blocks else 0
+        mem = bytearray(b"\xff" * size)
+        for a, b in blocks.items():
+            mem[a:a + 8] = b
+        print(fw.analyze_image(bytes(mem)).text())
+        return
+    node = _instant_node(args)
+
+    def progress(done, total):
+        if done % 0x1000 == 0 or done == total:
+            print(f"\r  reading (read-only)… {done * 100 // total:3d}%", end="", file=sys.stderr, flush=True)
+
+    with make_device(node) as dev:
+        mouse = InstantMouse(dev, pid=node.pid)
+
+        def read(addr):
+            try:
+                return mouse.read_block(addr)
+            except InstantError as e:
+                raise OSError(str(e)) from e
+
+        if args.action == "map":
+            rep = fw.map_memory(read, progress=progress)
+            print("", file=sys.stderr)
+            print(rep.text())
+            return
+        blocks, err = {}, None
+        for addr in range(args.start, args.end, 8):
+            try:
+                blocks[addr] = read(addr)
+            except OSError as e:
+                err = f"stopped at 0x{addr:04x}: {e}"
+                break
+            progress(addr + 8 - args.start, args.end - args.start)
+    print("", file=sys.stderr)
+    if err:
+        print(err + "  (unplug and replug the mouse if it misbehaves)")
+    if args.save:
+        with open(args.save, "w") as f:
+            json.dump({"usb_id": node.usb_id, "name": node.hid_name, "note": "blazectl firmware dump (read-only)",
+                       "blocks": {f"0x{a:04x}": b.hex() for a, b in blocks.items()}}, f)
+        print(f"saved {len(blocks) * 8} bytes to {args.save}; analyse with `blazectl firmware analyze {args.save}`")
+
+
+# ------------------------------------------------------------------ agent ---
+
+
+def cmd_agent(args):
+    from . import agent as ag
+
+    if args.stop:
+        print("stopped" if ag.request_stop() else "the agent didn't stop within 6 s")
+        return
+    if args.status:
+        running = ag.is_running()
+        print(f"agent: {'running' if running else 'not running'}"
+              f"  · start with login: {'on' if ag.autostart_enabled() else 'off'}")
+        st = ag.read_status() if running else None
+        if st:
+            print(f"  profile: {st.get('profile') or '-'}   in front: {st.get('foreground') or '-'}")
+            if st.get("paused"):
+                print(f"  paused: {st['paused']}")
+            for e in st.get("errors") or []:
+                print(f"  problem: {e}")
+            if st.get("recent_apps"):
+                print("  recent apps: " + ", ".join(st["recent_apps"]))
+        return
+    if args.autostart:
+        ag.set_autostart(args.autostart == "on")
+        print(f"start with login: {args.autostart}")
+        return
+    if args.background:
+        if ag.is_running():
+            print("already running")
+            return
+        ag.launch()
+        print("agent started in the background (stop it with `blazectl agent --stop`)")
+        return
+    print("BLAZE Agent running. Settings: Automation page in the app, or `blazectl auto`. Ctrl+C to stop.")
+    sys.exit(ag.main(console=True))
+
+
+def cmd_auto(args):
+    """Edit per-app profile rules (agent.json)."""
+    from . import agent as ag
+    from .service import PROFILE_SLOTS
+
+    store = ag.AgentConfigStore()
+    cfg = store.load()
+    ap = cfg["auto_profiles"]
+    a = args.action
+    if a == "which":
+        from .foreground import UnsupportedDesktop, foreground_app
+        import time as _t
+        print(f"Switch to the app you want within {args.wait:g} s…")
+        _t.sleep(args.wait)
+        try:
+            app = foreground_app()
+        except UnsupportedDesktop as e:
+            sys.exit(str(e))
+        if app is None:
+            print("no app is focused")
+        else:
+            print(f"app: {app.exe or '(unknown)'}\ntitle: {app.title}")
+            print(f"add it with:  blazectl auto add {app.exe or 'title:' + app.title} game1")
+        return
+    if a == "add":
+        if not args.match or args.profile not in PROFILE_SLOTS:
+            sys.exit(f"usage: blazectl auto add APP PROFILE   (PROFILE: {', '.join(PROFILE_SLOTS)})")
+        ap["rules"] = [r for r in ap["rules"] if r["match"].lower() != args.match.lower()]
+        ap["rules"].append({"match": args.match, "profile": args.profile})
+    elif a == "remove":
+        before = len(ap["rules"])
+        ap["rules"] = [r for r in ap["rules"] if r["match"].lower() != (args.match or "").lower()]
+        if len(ap["rules"]) == before:
+            sys.exit(f"no rule for {args.match!r}")
+    elif a == "default":
+        ap["default"] = None if args.match in (None, "none") else args.match
+    elif a in ("on", "off"):
+        ap["enabled"] = a == "on"
+    if a != "list":
+        try:
+            cfg = store.save(cfg)
+        except ag.ConfigError as e:
+            sys.exit(str(e))
+        ap = cfg["auto_profiles"]
+    print(f"per-app profiles: {'on' if ap['enabled'] else 'off'}   (when no rule matches: {ap['default'] or 'keep current'})")
+    for r in ap["rules"]:
+        print(f"  {r['match']:28} -> {r['profile']}")
+    if not ap["rules"]:
+        print("  no rules yet. Find an app's name with `blazectl auto which`, then `blazectl auto add NAME game1`.")
+    if not ag.is_running() and ap["enabled"]:
+        print("note: the agent isn't running. Start it with `blazectl agent --background`.")
+
+
+def cmd_alert(args):
+    from . import agent as ag
+
+    if args.ack:
+        print("alert cleared" if ag.send_alert("", "", ack=True) else "no agent running")
+        return
+    title = " ".join(args.title) or "Test alert"
+    sent = ag.send_alert(args.severity, title)
+    if sent:
+        print(f"sent to the agent: {args.severity} · {title}")
+        return
+    if sent is False:
+        sys.exit("the agent ignored it: the alert light is off, or the severity is below its minimum "
+                 "(Automation page / agent.json)")
+    if args.no_direct:
+        sys.exit("no agent is running (start it with `blazectl agent --background`)")
+    # No agent: blink the mouse from here, then put the user's lighting back.
+    import time as _t
+    from .service import LightingSettings, MouseService, ServiceError
+
+    svc = MouseService()
+    sev = ag.normalize_severity(args.severity)
+    color, step = ag.SEVERITY_COLOR[sev], ag.BLINK_INTERVAL[sev]
+    print(f"no agent running: blinking {sev} for {args.seconds:g} s here (Ctrl+C stops)")
+    try:
+        end, on = _t.monotonic() + args.seconds, False
+        while _t.monotonic() < end:
+            on = not on
+            svc.preview_lighting(LightingSettings(mode="static", colors=[color if on else "#000000"] * 6))
+            _t.sleep(step)
+    except KeyboardInterrupt:
+        pass
+    except ServiceError as e:
+        sys.exit(str(e))
+    finally:
+        try:
+            svc.restore_lighting()
+        except ServiceError:
+            pass
+
+
+PAGE_NAMES = {0xFF00: "vendor event channel", 0xFF01: "vendor control channel", 0x0C: "consumer (media keys)",
+              0x01: "generic desktop"}
+
+
+def _event_nodes(nodes, vid):
+    """Collections worth listening to. Windows: every readable collection except the pointer/keyboard ones
+    Windows keeps for itself. Linux: interface 1 (one hidraw node holds all its collections); interface 0
+    is plain mouse movement and would only print noise."""
+    out = []
+    for n in nodes:
+        if n.vid != vid:
+            continue
+        page = getattr(n, "usage_page", None)
+        if page is not None and getattr(n, "backend", "") == "hidapi":
+            if (page, getattr(n, "usage", 0)) in ((0x01, 0x02), (0x01, 0x06)):
+                continue                       # mouse / keyboard: locked by Windows
+            out.append(n)
+        elif getattr(n, "interface", 1) != 0:
+            out.append(n)
+    return out
+
+
+def cmd_events(args):
+    """Print what the mouse sends by itself (read-only): which reports appear when you press buttons."""
+    import time as _t
+    from .drivers.instant import VID
+
+    nodes = _event_nodes(enumerate_nodes(), VID)
+    if not nodes:
+        sys.exit("No readable channel found. Is the mouse plugged in?")
+    devs = []
+    for n in nodes:
+        page = getattr(n, "usage_page", None)
+        label = PAGE_NAMES.get(page, f"usage page 0x{page:04x}" if page is not None else f"interface {n.interface}")
+        try:
+            wrapped = make_device(n)
+            d = getattr(wrapped, "_inner", wrapped)   # listening sends nothing, so it skips the device lock
+            d.open()
+        except OSError as e:
+            print(f"  (can't open {label}: {e})")
+            continue
+        devs.append((label, d))
+    if not devs:
+        sys.exit("Couldn't open any channel of the mouse.")
+    print(f"Listening for {args.seconds:g} s on: " + ", ".join(lbl for lbl, _ in devs) + " (read-only)")
+    print("Press ONLY the DPI button a few times, slowly. (Avoid buttons set to Ctrl+C: in a terminal that stops this.)")
+    end, seen = _t.monotonic() + args.seconds, 0
+    try:
+        while _t.monotonic() < end:
+            for label, d in devs:
+                try:
+                    data = d.read_input(timeout=0.05)
+                except OSError:
+                    data = None
+                if data:
+                    seen += 1
+                    print(f"{_t.strftime('%H:%M:%S')}  {label:24} {data.hex(' ')}", flush=True)
+    except KeyboardInterrupt:
+        print("\nstopped (Ctrl+C: from the keyboard, or from a mouse button set to Ctrl+C)")
+    finally:
+        for _, d in devs:
+            try:
+                d.close()
+            except OSError:
+                pass
+    print(f"done: {seen} report(s) seen" + ("" if seen else ". The DPI button may not announce anything; "
+                                              "the popup then keeps reading the DPI level instead."))
+
+
 # ---------------------------------------------------------------- profiles ---
 
 
@@ -774,6 +1155,80 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--execute", action="store_true")
     sp.add_argument("--usb-id")
     sp.set_defaults(func=cmd_poll)
+
+    sp = sub.add_parser("restore", help="repair: put chosen blocks back to their bytes in a backup of this mouse",
+                        description="Without --blocks: list the blocks that differ from the backup.\n"
+                        "With --blocks 0x18,0x50: show what would change (dry run); add --execute to write.\n"
+                        "Only bytes from a backup of this same mouse are written; the header never is;\n"
+                        "a full backup is saved first and every block is verified.",
+                        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp.add_argument("backup", help="a dump/backup JSON of this mouse (e.g. from `blazectl dump --save`)")
+    sp.add_argument("--blocks", help="comma-separated block addresses, e.g. 0x18,0x50,0xd8")
+    sp.add_argument("--execute", action="store_true", help="really write (otherwise a dry run)")
+    sp.add_argument("--usb-id")
+    sp.set_defaults(func=cmd_restore)
+
+    sp = sub.add_parser("firmware", help="read-only firmware exploration: map, dump, analyze, appscan",
+                        description="map      sample the 64 KB address space (about a second)\n"
+                        "dump     read it all: blazectl firmware dump --save fw.json (a few minutes)\n"
+                        "analyze  look for code in a dump: blazectl firmware analyze fw.json\n"
+                        "appscan  scan the official app's folder: blazectl firmware appscan \"C:\\...\\EvoFox\"\n"
+                        "Only the normal memory READ command is sent. Nothing is ever written.",
+                        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp.add_argument("action", choices=["map", "dump", "analyze", "appscan"])
+    sp.add_argument("path", nargs="?", help="dump file (analyze) or app folder (appscan)")
+    sp.add_argument("--start", type=_int, default=0)
+    sp.add_argument("--end", type=_int, default=0x10000)
+    sp.add_argument("--save", help="dump: where to save")
+    sp.add_argument("--usb-id")
+    sp.set_defaults(func=cmd_firmware)
+
+    sp = sub.add_parser("build-web", help="build BLAZE Web, the WebHID browser version (one HTML file)")
+    sp.add_argument("--out", default="site", help="output folder (default: site)")
+    sp.set_defaults(func=lambda a: print(f"built {__import__('blazectl.webbuild', fromlist=['build']).build(a.out)}"
+                                         " (open it in Chrome/Edge, or publish the folder with GitHub Pages)"))
+
+    sp = sub.add_parser("audit", help="security check: could a stored macro type commands? (read-only)")
+    sp.add_argument("--dump", help="audit a saved dump instead of the mouse")
+    sp.add_argument("--end", type=_int, default=0x1000, help="read memory up to here (default 0x1000)")
+    sp.add_argument("--save", help="also save the memory read as evidence (JSON)")
+    sp.add_argument("--json", action="store_true", help="machine-readable output")
+    sp.add_argument("--usb-id")
+    sp.set_defaults(func=cmd_audit)
+
+    sp = sub.add_parser("agent", help="background agent: per-app profiles, DPI popup, alert light")
+    g = sp.add_mutually_exclusive_group()
+    g.add_argument("--background", action="store_true", help="start it in the background and return")
+    g.add_argument("--stop", action="store_true", help="stop a running agent")
+    g.add_argument("--status", action="store_true", help="is it running, what is it doing")
+    g.add_argument("--autostart", choices=["on", "off"], help="start the agent when you log in (no admin)")
+    sp.set_defaults(func=cmd_agent)
+
+    sp = sub.add_parser("auto", help="per-app profile rules for the agent",
+                        description="Examples:\n"
+                        "  blazectl auto which                 show the name of the app you switch to\n"
+                        "  blazectl auto add valorant.exe game1\n"
+                        "  blazectl auto add \"title:*YouTube*\" media\n"
+                        "  blazectl auto default office         profile when no rule matches (or: none)\n"
+                        "  blazectl auto on | off | list | remove valorant.exe",
+                        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove", "default", "on", "off", "which"])
+    sp.add_argument("match", nargs="?", help="app name (valorant.exe, code), wildcard (cs2*) or title:*text*")
+    sp.add_argument("profile", nargs="?", help="office, game1, game2 or media")
+    sp.add_argument("--wait", type=float, default=3.0, help="seconds to wait before `which` looks")
+    sp.set_defaults(func=cmd_auto)
+
+    sp = sub.add_parser("alert", help="blink the mouse for a security alert (through the agent if it runs)")
+    sp.add_argument("title", nargs="*", help="what happened")
+    sp.add_argument("--severity", default="high", help="info, low, medium, high, critical (or 0-10)")
+    sp.add_argument("--seconds", type=float, default=8, help="how long to blink when no agent runs")
+    sp.add_argument("--ack", action="store_true", help="stop the current alert")
+    sp.add_argument("--no-direct", action="store_true", help="fail instead of blinking here when no agent runs")
+    sp.set_defaults(func=cmd_alert)
+
+    sp = sub.add_parser("events", help="Instant mice: show raw packets from the event channel (read-only)")
+    sp.add_argument("--seconds", type=float, default=20)
+    sp.set_defaults(func=cmd_events)
 
     sp = sub.add_parser("profile", help="manage JSON profiles")
     sp.add_argument("action", choices=["list", "new", "show", "check"])

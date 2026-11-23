@@ -3,7 +3,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ;
 ; Inno Setup script for the BLAZE Control installer. Build after PyInstaller:
-;   set BLAZE_VERSION=0.2.0
+;   set BLAZE_VERSION=0.3.0
 ;   iscc packaging\installer.iss
 ; Output: dist\BLAZE-Control-Setup-<version>.exe
 
