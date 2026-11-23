@@ -10,6 +10,7 @@ lighting, so the last lighting the user chose is re-applied automatically.
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import subprocess
@@ -55,17 +56,37 @@ class ServiceError(Exception):
     pass
 
 
+# The official app runs as "Gaming Mouse 3.0.exe" (installed in "EvoFox Blaze Gaming Mouse"); its helpers
+# may carry "EvoFox" or "Blaze" in their names. Our own programs ("BLAZE Control.exe", which is also what
+# the BLAZE Agent runs as) must never count, or the agent would pause itself and the app would warn about itself.
+OWN_PROGRAMS = ("blaze control", "blazectl")
+
+
+def is_official_app(image: str) -> bool:
+    """Does this process name (as tasklist shows it, e.g. "Gaming Mouse 3.0.exe") look like the EvoFox app?"""
+    name = image.strip().lower()
+    if not name or name.startswith(OWN_PROGRAMS):
+        return False
+    return name.startswith("gaming mouse") or "evofox" in name or "blaze" in name
+
+
+def _process_names() -> list[str]:
+    # CSV keeps full names (the table view cuts them at 25 characters);
+    # CREATE_NO_WINDOW: no console flash when running inside the windowed app
+    out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=5,
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+    return [row[0] for row in csv.reader(out.splitlines()) if row]
+
+
 def official_app_running() -> bool:
     """Best effort: the EvoFox app re-applies its own profile when it's running (Windows only)."""
     if not sys.platform.startswith("win"):
         return False
     try:
-        # CREATE_NO_WINDOW: no console flash when running inside the windowed app
-        out = subprocess.run(["tasklist"], capture_output=True, text=True, timeout=5,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.lower()
+        names = _process_names()
     except Exception:
         return False
-    return "evofox" in out or "blaze" in out
+    return any(is_official_app(n) for n in names)
 
 
 class MouseService:

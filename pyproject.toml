@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "blazectl"
-version = "0.3.0"
+version = "0.3.1"
 description = "Open-source Windows/Linux configurator for the EvoFox Blaze Ultra gaming mouse, built by reverse-engineering its USB protocol"
 readme = "README.md"
 requires-python = ">=3.10"

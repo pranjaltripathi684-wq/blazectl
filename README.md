@@ -298,7 +298,7 @@ Build the Windows app yourself (normally GitHub Actions does this when a release
 pip install . pywebview hidapi pyinstaller
 python packaging/make_version_info.py
 pyinstaller --noconfirm --clean packaging/blaze_control.spec     # -> dist/BLAZE Control/BLAZE Control.exe
-set BLAZE_VERSION=0.3.0 && iscc packaging/installer.iss          # -> dist/BLAZE-Control-Setup-0.3.0.exe (needs Inno Setup)
+set BLAZE_VERSION=0.3.1 && iscc packaging/installer.iss          # -> dist/BLAZE-Control-Setup-0.3.1.exe (needs Inno Setup)
 ```
 
 ```
