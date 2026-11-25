@@ -8,7 +8,6 @@ import pytest
 
 from blazectl import service as svcmod
 from blazectl.drivers import instant as ins
-from blazectl.hidraw import HidrawNode
 from sim import make_service
 from test_instant import REAL_BUTTONS, FakeInstantMouse
 

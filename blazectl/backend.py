@@ -12,12 +12,20 @@ from __future__ import annotations
 import sys
 
 
-def enumerate_nodes():
+def enumerate_nodes(vid: int | None = None):
+    """HID devices on this machine; `vid` limits it to one vendor (and opens nothing else)."""
     if sys.platform.startswith("linux"):
         from .hidraw import enumerate_nodes as _enum
     else:
         from .winhid import enumerate_nodes as _enum
-    return _enum()
+    return _enum() if vid is None else _enum(vid=vid)
+
+
+def mouse_nodes():
+    """Only the Instant-chip devices (VID 0x30FA): what every mouse operation needs."""
+    from .drivers.instant import VID
+
+    return enumerate_nodes(vid=VID)
 
 
 class LockedDevice:

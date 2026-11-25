@@ -175,6 +175,7 @@ class ProfileSwitcher:
         if self.gui_open_fn():
             self.paused = "BLAZE Control is open (switching resumes when you close it)"
             self.candidate = None
+            self.applied = None          # you may switch profiles by hand there: re-apply the right one after
             return
         self.paused = None
         try:
@@ -453,8 +454,9 @@ class AlertBeacon:
             return
         try:
             if now >= a.until:
+                self.svc.restore_lighting()       # if this fails, the alert stays and we retry (below)
                 self.active = None
-                self.svc.restore_lighting()
+                self.error = None
                 return
             if now >= a.next_toggle:
                 a.on = not a.on
@@ -510,7 +512,12 @@ def make_alert_server(beacon: AlertBeacon, token: str, port: int = 0, on_preview
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "bad host"})
             if not secrets.compare_digest(self.headers.get("X-Blazectl-Token", ""), token):
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "bad token"})
-            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                n = -1
+            if n < 0:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": "bad Content-Length"})
             if n > 4096:
                 return self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "too large"})
             try:
@@ -817,10 +824,12 @@ def set_autostart(on: bool) -> None:
 
 
 def setup_logging(console: bool = False) -> None:
+    from logging.handlers import RotatingFileHandler
+
     handlers: list[logging.Handler] = []
     try:
         os.makedirs(config_dir(), exist_ok=True)
-        handlers.append(logging.FileHandler(_path("agent.log"), encoding="utf-8"))
+        handlers.append(RotatingFileHandler(_path("agent.log"), maxBytes=1_000_000, backupCount=2, encoding="utf-8"))
     except OSError:
         pass
     if console and sys.stderr is not None:

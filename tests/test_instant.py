@@ -430,7 +430,7 @@ def test_set_active_level_refuses_disabled_or_bad():
     m = ins.InstantMouse(fake, sleep=no_sleep)
     with pytest.raises(ins.InstantError, match="disabled"):
         m.set_active_level(5)
-    with pytest.raises(ins.InstantError, match="level must be"):
+    with pytest.raises(ins.InstantError, match="level index must be"):
         m.set_active_level(6)
     assert fake.writes() == []
 

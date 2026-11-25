@@ -214,8 +214,8 @@ python -m blazectl build-web --out site                     # build BLAZE Web (o
   `esc`, `backspace`, `f1`-`f12`, `lctrl lshift lalt lwin`, `up down left right`, `kp0`-`kp9` and more.
   Buttons 2-7 can hold a macro (4-7 confirmed against the official app; 2 and 3 follow the same pattern).
   Up to 127 slots per macro (each slot = one event, long delays use one extra slot per 127 ms).
-- DPI, polling, button and macro changes make the mouse reload, which resets lighting. The GUI re-applies your
-  lighting automatically; on the command line, run `light` again.
+- DPI, polling, button and macro changes make the mouse reload, which resets lighting. The GUI and the command
+  line both put your last lighting back automatically (`light` remembers what you set).
 
 ## The GUI and its security
 
@@ -287,7 +287,7 @@ example, doesn't accept AI-generated submissions).
 
 ```
 pip install -e ".[dev]"     (add "hidapi" on Windows)
-python -m pytest            # 220+ tests; the WebHID parity test needs Node.js
+python -m pytest            # 260+ tests; the WebHID parity test needs Node.js
 ```
 
 Build the Windows app yourself (normally GitHub Actions does this when a release is published):
@@ -296,7 +296,7 @@ Build the Windows app yourself (normally GitHub Actions does this when a release
 pip install . pywebview hidapi pyinstaller
 python packaging/make_version_info.py
 pyinstaller --noconfirm --clean packaging/blaze_control.spec     # -> dist/BLAZE Control/BLAZE Control.exe
-set BLAZE_VERSION=0.3.1 && iscc packaging/installer.iss          # -> dist/BLAZE-Control-Setup-0.3.1.exe (needs Inno Setup)
+set BLAZE_VERSION=0.3.2 && iscc packaging/installer.iss          # -> dist/BLAZE-Control-Setup-0.3.2.exe (needs Inno Setup)
 ```
 
 ```

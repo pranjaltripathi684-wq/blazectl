@@ -49,10 +49,16 @@ def _hid(module):
     return h
 
 
-def enumerate_nodes(hid_module=None) -> list[HidapiNode]:
+def enumerate_nodes(hid_module=None, vid: int | None = None) -> list[HidapiNode]:
+    """All HID collections, or only one vendor's (`vid`).
+
+    Reading a report descriptor means opening the device, so with `vid` set no other device is touched:
+    the agent reads the mouse every 0.4 s and must not open every keyboard and headset each time."""
     h = _hid(hid_module)
     nodes = []
     for i, d in enumerate(h.enumerate()):
+        if vid is not None and d.get("vendor_id", 0) != vid:
+            continue
         raw = d.get("path") or b""
         raw = raw if isinstance(raw, bytes) else str(raw).encode()
         desc = b""

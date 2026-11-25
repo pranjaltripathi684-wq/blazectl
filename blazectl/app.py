@@ -57,8 +57,12 @@ class SingleInstance:
         self._handle = None
         if sys.platform.startswith("win"):
             import ctypes
-            self._handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\BLAZEControl.blazectl")
-            self.ok = ctypes.windll.kernel32.GetLastError() != 183            # ERROR_ALREADY_EXISTS
+            from ctypes import wintypes
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            k.CreateMutexW.restype = wintypes.HANDLE
+            k.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+            self._handle = k.CreateMutexW(None, False, "Local\\BLAZEControl.blazectl")
+            self.ok = ctypes.get_last_error() != 183                         # ERROR_ALREADY_EXISTS
         else:
             import fcntl
             os.makedirs(_config_dir(), exist_ok=True)

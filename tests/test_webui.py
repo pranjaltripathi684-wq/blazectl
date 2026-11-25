@@ -9,8 +9,7 @@ import threading
 
 import pytest
 
-from blazectl.drivers import instant as ins
-from blazectl.webui import build_page, catalog, make_server
+from blazectl.webui import catalog, make_server
 from sim import make_service
 
 

@@ -628,9 +628,19 @@ const PROF = {office:["Office",'<path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/>'],
 
 // ---------- state ----------
 const configFromState = st => ({dpi:[...st.dpi], polling:st.polling || 1000, buttons:{...st.buttons}, lighting:clone(st.lighting), macros:clone(st.macros || {})});
+const HEX = /^#[0-9a-f]{6}$/i;
+// Colours go into the page's HTML (style attributes), so only plain #rrggbb may ever reach it,
+// whatever a profile, an imported file or a settings file says.
+function cleanLighting(l) {
+  const n = (v, lo, hi, d) => { v = Number(v); return Number.isInteger(v) && v >= lo && v <= hi ? v : d; };
+  const colors = (Array.isArray(l && l.colors) ? l.colors : []).slice(0, LEVELS).map(c => typeof c === "string" && HEX.test(c) ? c : "#ff2d3d");
+  return {mode: C.modes.some(m => m.id === (l && l.mode)) ? l.mode : "static", colors,
+          speed: n(l && l.speed, 0, 5, 2), brightness: n(l && l.brightness, 0, 7, 7), direction: n(l && l.direction, 0, 1, 0)};
+}
 function setDraft(cfg) {
   draft = clone(cfg);
   draft.macros = draft.macros || {};
+  draft.lighting = cleanLighting(draft.lighting);
   while (draft.lighting.colors.length < LEVELS) draft.lighting.colors.push(draft.lighting.colors[0] || "#ff2d3d");
   $("#same").checked = new Set(draft.lighting.colors).size === 1;
   renderAll();
@@ -1252,7 +1262,10 @@ $("#importFile").onchange = async e => {
     const j = JSON.parse(await f.text());
     if (!Array.isArray(j.dpi) || j.dpi.length !== 6 || !j.dpi.every(v => C.dpi_values.includes(+v))) throw new Error("DPI values not supported");
     if (!C.poll_rates.includes(+j.polling)) throw new Error("bad polling rate");
-    if (!j.lighting || !C.modes.some(m => m.id === j.lighting.mode)) throw new Error("bad lighting");
+    const jl = j.lighting, int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+    if (!jl || !C.modes.some(m => m.id === jl.mode) || !Array.isArray(jl.colors) || !jl.colors.length || jl.colors.length > 6
+        || !jl.colors.every(c => typeof c === "string" && HEX.test(c)) || !int(jl.speed, 0, 5) || !int(jl.brightness, 0, 7)
+        || !int(jl.direction, 0, 1)) throw new Error("bad lighting (effect, #rrggbb colours, speed 0-5, brightness 0-7, direction 0-1)");
     const jm = j.macros || {};
     const okBinding = m => !!m && (m.type === "media" ? !!C.media_keys[m.key]
       : m.type === "shortcut" ? Array.isArray(m.mods) && m.mods.every(x => C.modifiers.includes(x)) && C.keys.includes(m.key)

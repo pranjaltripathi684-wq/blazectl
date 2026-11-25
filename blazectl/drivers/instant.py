@@ -474,7 +474,7 @@ class InstantMouse:
         Verified by read-back and auto-restored on mismatch, then the mouse reloads to apply it.
         """
         if not 0 <= level < DPI_LEVELS:
-            raise InstantError(f"level must be 1-{DPI_LEVELS}")
+            raise InstantError(f"level index must be 0-{DPI_LEVELS - 1} (level 1-{DPI_LEVELS})")
         ok, msg = self.check_header(pid=pid)
         if not ok:
             raise InstantError(msg)

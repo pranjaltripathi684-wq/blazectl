@@ -17,7 +17,7 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 
-from .backend import enumerate_nodes, make_device
+from .backend import make_device, mouse_nodes
 from .drivers import instant as ins
 from .drivers.macro import Macro, MacroError, binding_from_json
 
@@ -37,6 +37,17 @@ class LightingSettings:
 
     def packets(self) -> list[bytes]:
         return ins.lighting_packets(self.mode, self.colors, self.speed, self.brightness, self.direction)
+
+    def check(self) -> None:
+        """Raise InstantError unless every field is valid, including all colours (even for effects that
+        don't use them): colours end up in the app's page, so they must be plain #rrggbb."""
+        if not isinstance(self.colors, list) or not 1 <= len(self.colors) <= ins.DPI_LEVELS:
+            raise ins.InstantError(f"need 1-{ins.DPI_LEVELS} colours")
+        for c in self.colors:
+            if not isinstance(c, str) or not c.startswith("#"):
+                raise ins.InstantError(f"invalid colour {c!r}, use #rrggbb")
+            ins.parse_color(c)
+        self.packets()
 
 
 @dataclass
@@ -90,7 +101,7 @@ def official_app_running() -> bool:
 
 
 class MouseService:
-    def __init__(self, nodes_fn=enumerate_nodes, device_fn=make_device, settings_path: str | None = None, sleep=None):
+    def __init__(self, nodes_fn=mouse_nodes, device_fn=make_device, settings_path: str | None = None, sleep=None):
         self._nodes_fn = nodes_fn
         self._device_fn = device_fn
         self._sleep = sleep
@@ -152,10 +163,14 @@ class MouseService:
     # -- lighting -----------------------------------------------------------
 
     def load_lighting(self) -> LightingSettings:
+        """The user's saved lighting; the default if the file is missing or damaged (a bad file must not make
+        every later write fail when the lighting is put back)."""
         try:
             with open(self.settings_path) as f:
-                return LightingSettings(**json.load(f))
-        except (OSError, ValueError, TypeError):
+                s = LightingSettings(**json.load(f))
+            s.check()
+            return s
+        except (OSError, ValueError, TypeError, AttributeError, ins.InstantError):
             return LightingSettings()
 
     def save_lighting(self, s: LightingSettings) -> None:
@@ -166,7 +181,7 @@ class MouseService:
         os.replace(tmp, self.settings_path)
 
     def set_lighting(self, s: LightingSettings) -> None:
-        s.packets()  # validate before touching the device
+        s.check()  # validate before touching the device
         self._run(lambda m, node: m.set_lighting(mode_name=s.mode, colors=s.colors, speed=s.speed,
                                                  brightness=s.brightness, direction=s.direction))
         self.save_lighting(s)
@@ -181,7 +196,7 @@ class MouseService:
 
     def preview_lighting(self, s: LightingSettings) -> None:
         """Show lighting without saving it as the user's choice (alerts). RAM only: no flash writes."""
-        s.packets()
+        s.check()
         self._run(lambda m, node: m.set_lighting(mode_name=s.mode, colors=s.colors, speed=s.speed,
                                                  brightness=s.brightness, direction=s.direction))
 
@@ -255,7 +270,17 @@ class MouseService:
         """
         cfg = ProfileStore.validate(config)
         light = LightingSettings(**cfg["lighting"])
-        light.packets()                                   # validate before touching the device
+        if cfg["polling"] not in ins.POLL_RATES:          # check everything BEFORE the first write, so a bad
+            raise ServiceError(f"profile: polling rate {cfg['polling']} is not supported")   # profile can't
+        bindings = {}                                     # leave the mouse half-switched
+        for k, d in cfg["macros"].items():
+            if int(k) not in ins.MACRO_BUTTONS:
+                raise ServiceError(f"profile: button {k} can't hold a macro, media key or shortcut")
+            bindings[int(k)] = binding_from_json(d)
+        for k, fn in cfg["buttons"].items():
+            allowed = ins.BUTTON_ALLOWED.get(int(k))
+            if fn in ins.BUTTON_FUNCTIONS and allowed is not None and ins.BUTTON_FUNCTIONS[fn] not in allowed:
+                raise ServiceError(f"profile: button {k} only supports {', '.join(allowed.values())}")
 
         def go(m, node):
             ok, msg = m.check_header(pid=node.pid)
@@ -270,10 +295,9 @@ class MouseService:
             bind, unbind, plain = {}, {}, {}
             for num in sorted(current_codes):
                 want_fn = cfg["buttons"].get(str(num))
-                want_b = cfg["macros"].get(str(num))
+                b = bindings.get(num)
                 have_b = current_special.get(num)
-                if want_b is not None:
-                    b = binding_from_json(want_b)
+                if b is not None:
                     if have_b is None or have_b.to_json() != b.to_json():
                         bind[num] = b
                 elif want_fn is None:
@@ -284,19 +308,28 @@ class MouseService:
                     unbind[num] = ins.BUTTON_FUNCTIONS[want_fn]
                 elif current_codes[num] != ins.BUTTON_FUNCTIONS[want_fn]:
                     plain[num] = ins.BUTTON_FUNCTIONS[want_fn]
-            if bind or unbind:
-                if m.set_macros({**unbind, **bind}, pid=node.pid, apply_now=False)["changed"]:
-                    done.append("macros")
-            if plain:
-                if m.set_buttons(plain, pid=node.pid, apply_now=False)["changed"]:
-                    done.append("buttons")
-            codes = [ins.dpi_to_code(v, node.pid) for v in cfg["dpi"]]
-            if m.set_dpi(codes, pid=node.pid, apply_now=False)["changed"]:
-                done.append("dpi")
-            if cfg["polling"] not in ins.POLL_RATES:
-                raise ServiceError(f"profile: polling rate {cfg['polling']} is not supported")
-            if m.set_polling_byte(ins.POLL_RATES[cfg["polling"]], pid=node.pid, apply_now=False)["changed"]:
-                done.append("polling")
+            try:
+                codes = [ins.dpi_to_code(v, node.pid) for v in cfg["dpi"]]
+            except ins.InstantError as e:
+                raise ServiceError(f"profile: {e}") from e
+            try:
+                if bind or unbind:
+                    if m.set_macros({**unbind, **bind}, pid=node.pid, apply_now=False)["changed"]:
+                        done.append("macros")
+                if plain:
+                    if m.set_buttons(plain, pid=node.pid, apply_now=False)["changed"]:
+                        done.append("buttons")
+                if m.set_dpi(codes, pid=node.pid, apply_now=False)["changed"]:
+                    done.append("dpi")
+                if m.set_polling_byte(ins.POLL_RATES[cfg["polling"]], pid=node.pid, apply_now=False)["changed"]:
+                    done.append("polling")
+            except BaseException:
+                if done:              # what was stored should also be what the mouse uses, not on next replug
+                    try:
+                        m.reload()
+                    except (ins.InstantError, OSError):
+                        pass
+                raise
             if done:
                 m.reload()
             m.set_lighting(mode_name=light.mode, colors=light.colors, speed=light.speed,
@@ -343,8 +376,9 @@ class ProfileStore:
                 mode=str(light["mode"]), colors=[str(c) for c in light["colors"]][: ins.DPI_LEVELS],
                 speed=int(light["speed"]), brightness=int(light["brightness"]), direction=int(light["direction"]),
             )
+            lighting.check()          # effect, #rrggbb colours, ranges: the GUI puts colours into its page
             macros = {str(int(k)): binding_from_json(v).to_json() for k, v in dict(config.get("macros") or {}).items()}
-        except (KeyError, TypeError, ValueError, MacroError) as e:
+        except (KeyError, TypeError, ValueError, MacroError, ins.InstantError) as e:
             raise ServiceError(f"invalid profile: {e}") from e
         return {"dpi": dpi, "polling": poll, "buttons": buttons, "lighting": asdict(lighting), "macros": macros}
 

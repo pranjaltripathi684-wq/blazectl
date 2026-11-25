@@ -233,6 +233,17 @@ def _instant_node(args):
     return node
 
 
+def _relight() -> None:
+    """A memory write reloads the mouse, which drops its lighting: put back the saved lighting (as the app does)."""
+    from .service import MouseService, ServiceError
+
+    try:
+        MouseService().restore_lighting()
+        print("lighting put back")
+    except ServiceError:
+        print("note: the mouse reloaded, which resets lighting; set it again with `blazectl light ...`.")
+
+
 def cmd_dump(args):
     from .drivers.instant import DPI_BLOCK, STATE_BLOCK, InstantMouse, code_to_dpi, decode_dpi, DPI_CODES
 
@@ -382,7 +393,7 @@ def cmd_memdiff(args):
         offs = {i for i in range(8) if x[i] != y[i]}
         total += len(offs)
         print(f"0x{addr:03x}:  " + " ".join(f"[{v:02x}]" if i in offs else f" {v:02x} " for i, v in enumerate(x)))
-        print(f"      → " + " ".join(f"[{v:02x}]" if i in offs else f" {v:02x} " for i, v in enumerate(y)))
+        print("      → " + " ".join(f"[{v:02x}]" if i in offs else f" {v:02x} " for i, v in enumerate(y)))
     print(f"\n{total} byte(s) changed in {len(changed)} block(s); [xx] marks a changed byte.")
 
 
@@ -472,7 +483,7 @@ def cmd_macro(args):
             sys.exit(f"macro not written: {e}")
     print("saved and verified." if res["changed"] else "already set, nothing written")
     if res["changed"]:
-        print("note: the mouse reloads, which resets lighting; set it again with `blazectl light ...`.")
+        _relight()
 
 
 def cmd_light(args):
@@ -499,6 +510,13 @@ def cmd_light(args):
         except OSError as e:
             sys.exit(f"Sending failed: {e}")
     print(f"lighting set to {args.mode} on {node.usb_id} {node.hid_name} ({node.name})")
+    from .service import LightingSettings, MouseService
+
+    colors = [c if c.startswith("#") else "#" + c for c in (args.color or ["#ffffff"])]
+    try:                                    # remembered like the app's choice: put back after reloads and alerts
+        MouseService().save_lighting(LightingSettings(args.mode, colors, args.speed, args.brightness, args.direction))
+    except OSError:
+        pass
 
 
 def cmd_dpi(args):
@@ -518,28 +536,31 @@ def cmd_dpi(args):
                 mouse.set_active_level(args.active - 1, pid=node.pid)
             except (InstantError, OSError) as e:
                 sys.exit(f"active level not changed: {e}")
-            print(f"level {args.active} is now active. note: the mouse reloads, which resets lighting.")
-            return
-        if not args.set:
-            return
-        if len(args.set) != 6:
-            sys.exit("give exactly 6 DPI values, one per level")
-        try:
-            codes = [dpi_to_code(d, node.pid) for d in args.set]
-        except InstantError as e:
-            sys.exit(str(e))
-        print(f"new:     {[code_to_dpi(c, node.pid) for c in codes]}  (codes {codes})")
-        if not args.execute:
-            print("(dry run, add --execute to write. The mouse header is checked first; "
-                  "the write is read back and undone on mismatch.)")
-            return
-        try:
-            result = mouse.set_dpi(codes, pid=node.pid)
-        except (InstantError, OSError) as e:
-            sys.exit(f"DPI not changed: {e}")
-    if result["changed"]:
+            result = None
+        else:
+            if not args.set:
+                return
+            if len(args.set) != 6:
+                sys.exit("give exactly 6 DPI values, one per level")
+            try:
+                codes = [dpi_to_code(d, node.pid) for d in args.set]
+            except InstantError as e:
+                sys.exit(str(e))
+            print(f"new:     {[code_to_dpi(c, node.pid) for c in codes]}  (codes {codes})")
+            if not args.execute:
+                print("(dry run, add --execute to write. The mouse header is checked first; "
+                      "the write is read back and undone on mismatch.)")
+                return
+            try:
+                result = mouse.set_dpi(codes, pid=node.pid)
+            except (InstantError, OSError) as e:
+                sys.exit(f"DPI not changed: {e}")
+    if result is None:                      # the active level changed (the mouse always reloads for that)
+        print(f"level {args.active} is now active.")
+        _relight()
+    elif result["changed"]:
         print(f"saved and verified: {[code_to_dpi(c, node.pid) for c in result['codes']]} DPI")
-        print("note: applying DPI reloads the mouse, which resets lighting; run `blazectl light ...` again.")
+        _relight()
     else:
         print("already set, nothing written")
 
@@ -624,7 +645,8 @@ def cmd_buttons(args):
         except (InstantError, OSError) as e:
             sys.exit(f"buttons not changed: {e}")
     if changed:
-        print("saved and verified. note: the mouse reloads, which resets lighting; set it again with `blazectl light ...`.")
+        print("saved and verified.")
+        _relight()
     else:
         print("already set, nothing written")
 
@@ -654,7 +676,7 @@ def cmd_poll(args):
             sys.exit(f"polling rate not changed: {e}")
     print("saved and verified" if res["changed"] else "already set, nothing written")
     if res["changed"]:
-        print("note: the mouse reloads after this, which resets lighting; set it again with `blazectl light ...`.")
+        _relight()
 
 
 def cmd_gui(args):
@@ -1254,6 +1276,10 @@ class _VersionAction(argparse.Action):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    from .drivers.instant import InstantError
+    from .drivers.macro import MacroError
+    from .service import ServiceError
+
     try:
         args.func(args)
     except CaptureError as e:
@@ -1262,6 +1288,12 @@ def main(argv=None):
         sys.exit(str(e))
     except FileNotFoundError as e:
         sys.exit(f"Not found: {e.filename}")
+    except (InstantError, ServiceError, MacroError) as e:
+        sys.exit(f"error: {e}")
+    except OSError as e:                     # includes "the mouse is busy in another blazectl program"
+        sys.exit(f"error: {e}")
+    except KeyboardInterrupt:
+        sys.exit(130)
 
 
 if __name__ == "__main__":

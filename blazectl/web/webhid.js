@@ -65,6 +65,15 @@ function colorPacket(level, color) {
   const [r, g, b] = parseColor(color).map(c => 0xF - (c >> 4));
   return [REPORT_ID, CMD_COLOR, ((level * 2) << 4) | g, (r << 4) | b, 0, 0, 0, 0];
 }
+// Every field valid, including all colours even for effects that don't use them: colours end up in the page.
+function checkLighting(s) {
+  if (!Array.isArray(s.colors) || s.colors.length < 1 || s.colors.length > DPI_LEVELS) throw new InstantError(`need 1-${DPI_LEVELS} colours`);
+  for (const c of s.colors) {
+    if (typeof c !== "string" || !c.startsWith("#")) throw new InstantError(`invalid colour '${c}', use #rrggbb`);
+    parseColor(c);
+  }
+  return lightingPackets(s.mode, s.colors, s.speed, s.brightness, s.direction);
+}
 function lightingPackets(modeName, colors, speed = 2, brightness = BRIGHTNESS_MAX, direction = 0) {
   if (!(modeName in MODES)) throw new InstantError(`unknown mode '${modeName}'; choose from: ${Object.keys(MODES).join(", ")}`);
   const m = MODES[modeName];
@@ -488,7 +497,11 @@ class WebApi {
       throw new ServiceError(`USB error: ${e && e.message ? e.message : e}. Unplug and replug the mouse, close other mouse ` +
         "software (BLAZE Control, BLAZE Agent, the EvoFox app), then click Connect again."); }
   }
-  loadLighting() { const l = jsonGet(this.st, "blazectl.lighting", null); return l && l.mode ? l : DEFAULT_LIGHTING(); }
+  loadLighting() {
+    const l = jsonGet(this.st, "blazectl.lighting", null);
+    try { if (l && l.mode) { checkLighting(l); return l; } } catch (e) { /* damaged: use the default */ }
+    return DEFAULT_LIGHTING();
+  }
   saveLighting(l) { this.st.setItem("blazectl.lighting", JSON.stringify(l)); }
   async relight() { const s = this.loadLighting(); await this.run(m => m.setLighting(s.mode, s.colors, s.speed, s.brightness, s.direction)); }
   async readState() {
@@ -529,7 +542,7 @@ class WebApi {
     if (path === "/api/state") return this.state();
     if (path === "/api/lighting") {
       const s = {mode: String(body.mode), colors: body.colors.map(String).slice(0, DPI_LEVELS), speed: +body.speed, brightness: +body.brightness, direction: +body.direction};
-      try { lightingPackets(s.mode, s.colors, s.speed, s.brightness, s.direction); } catch (e) { throw new ServiceError(e.message); }
+      try { checkLighting(s); } catch (e) { throw new ServiceError(e.message); }
       await this.run(m => m.setLighting(s.mode, s.colors, s.speed, s.brightness, s.direction));
       this.saveLighting(s);
       return {message: `Lighting set to ${MODE_LABELS[s.mode] || s.mode}`};
@@ -639,6 +652,7 @@ class WebApi {
       if (dpi.length !== DPI_LEVELS || dpi.some(isNaN)) throw new Error("dpi must have 6 values");
       const buttons = {}; for (const [k, v] of Object.entries(c.buttons)) buttons[String(parseInt(k, 10))] = String(v);
       const L = c.lighting, lighting = {mode: String(L.mode), colors: L.colors.map(String).slice(0, DPI_LEVELS), speed: +L.speed, brightness: +L.brightness, direction: +L.direction};
+      checkLighting(lighting);
       const macros = {}; for (const [k, v] of Object.entries(c.macros || {})) macros[String(parseInt(k, 10))] = toJson(bindingFromJson(v));
       return {dpi, polling: parseInt(c.polling, 10), buttons, lighting, macros};
     } catch (e) { throw new ServiceError(`invalid profile: ${e.message}`); }
@@ -661,5 +675,5 @@ function hasControl(dev) { return dev.collections.some(c => c.usagePage === CONT
 
 return {InstantMouse, WebApi, HidTransport, HID_FILTERS, hasControl, ServiceError, InstantError, MacroError,
         lightingPackets, encodeDpi, decodeDpi, encodeButtons, decodeButtons, encodeEvents, decodeEvents, layout,
-        readBindings, bindingFromJson, toJson, VID, CONTROL_USAGE_PAGE, memoryStorage};
+        readBindings, bindingFromJson, toJson, checkLighting, VID, CONTROL_USAGE_PAGE, memoryStorage};
 });

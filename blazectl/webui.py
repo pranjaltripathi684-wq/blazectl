@@ -196,7 +196,7 @@ class Api:
             if path.startswith("/api/agent"):
                 return self.agent(path, body)
             if path == "/api/backup":
-                import tempfile, os
+                import tempfile
 
                 fd, tmp = tempfile.mkstemp(suffix=".json")
                 os.close(fd)
@@ -309,7 +309,12 @@ def make_handler(api: Api, token: str, page: bytes):
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "bad host"})
             if not secrets.compare_digest(self.headers.get("X-Blazectl-Token", ""), token):
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "bad token"})
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": "bad Content-Length"})
             if length > MAX_BODY:
                 return self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "too large"})
             try:
@@ -354,16 +359,12 @@ def _open_window(url: str) -> None:
     """Prefer a chromeless app window (Edge/Chrome --app); fall back to the default browser."""
     candidates = []
     if sys.platform.startswith("win"):
-        import os
-
         for base in (os.environ.get("ProgramFiles(x86)", ""), os.environ.get("ProgramFiles", ""),
                      os.environ.get("LOCALAPPDATA", "")):
             candidates += [os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
                            os.path.join(base, "Google", "Chrome", "Application", "chrome.exe")]
     else:
         candidates += [shutil.which(n) or "" for n in ("google-chrome", "chromium", "chromium-browser", "microsoft-edge")]
-    import os
-
     for exe in candidates:
         if exe and os.path.exists(exe):
             try:

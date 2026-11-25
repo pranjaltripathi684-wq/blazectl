@@ -11,7 +11,7 @@ The vendor protocol is undocumented, so this package ships two halves:
   decoded protocol plugs into.
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __author__ = "Pranjal Tripathi"
 __copyright__ = "Copyright (C) 2026 Pranjal Tripathi"
 __license__ = "GPL-3.0-or-later"

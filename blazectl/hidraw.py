@@ -94,17 +94,21 @@ def _num(name: str) -> int:
     return int(m.group(1)) if m else 0
 
 
-def enumerate_nodes(sysfs_root: str = SYSFS_HIDRAW, dev_root: str = "/dev") -> list[HidrawNode]:
+def enumerate_nodes(sysfs_root: str = SYSFS_HIDRAW, dev_root: str = "/dev", vid: int | None = None) -> list[HidrawNode]:
     nodes = []
     for path in sorted(glob.glob(os.path.join(sysfs_root, "hidraw*")), key=_num):
         name = os.path.basename(path)
         devdir = os.path.join(path, "device")
         uevent = _read(os.path.join(devdir, "uevent"))
         fields = dict(line.split("=", 1) for line in uevent.splitlines() if "=" in line)
-        bus = vid = pid = 0
+        bus = pid = 0
         if "HID_ID" in fields:
             b, v, p = fields["HID_ID"].split(":")
-            bus, vid, pid = int(b, 16), int(v, 16), int(p, 16)
+            bus, dvid, pid = int(b, 16), int(v, 16), int(p, 16)
+        else:
+            dvid = 0
+        if vid is not None and dvid != vid:
+            continue
         real = os.path.realpath(devdir)
         iface_matches = re.findall(r"\d+-[\d.]+:\d+\.(\d+)", real)
         nodes.append(
@@ -112,7 +116,7 @@ def enumerate_nodes(sysfs_root: str = SYSFS_HIDRAW, dev_root: str = "/dev") -> l
                 name=name,
                 devnode=os.path.join(dev_root, name),
                 bus=bus,
-                vid=vid,
+                vid=dvid,
                 pid=pid,
                 hid_name=fields.get("HID_NAME", ""),
                 interface=int(iface_matches[-1]) if iface_matches else None,
